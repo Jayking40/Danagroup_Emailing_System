@@ -86,6 +86,31 @@ npm run start:dev
 
 ---
 
+## Before Opening a PR
+
+Run the full CI suite locally before pushing. All checks must pass — CI will block merging if any step fails.
+
+**Frontend**
+```bash
+cd dims-frontend
+npm run lint        # ESLint
+npm run type-check  # TypeScript
+npm run build       # Next.js production build
+```
+
+**Backend**
+```bash
+cd dims-backend
+npm run lint        # ESLint (warnings are okay, errors are not)
+npm run build       # NestJS compile
+npm run test        # Unit tests
+npm run test:e2e    # End-to-end tests
+```
+
+> All four frontend steps and all four backend steps must exit with code `0` before the PR is ready to review.
+
+---
+
 ## CI/CD
 
 | Workflow | Trigger | Actions |
