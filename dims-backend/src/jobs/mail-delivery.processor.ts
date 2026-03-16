@@ -1,5 +1,5 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Job } from 'bullmq';
+import { Processor, WorkerHost } from "@nestjs/bullmq";
+import { Job } from "bullmq";
 
 // TODO: Process 'mail-delivery' queue jobs
 // Job data: { messageId, recipientIds, senderId }
@@ -9,7 +9,7 @@ import { Job } from 'bullmq';
 //   3. Emit WebSocket event via MailGateway.emitNewMail(recipientId, messagePayload)
 //   4. Optionally: send push notification (future)
 
-@Processor('mail-delivery')
+@Processor("mail-delivery")
 export class MailDeliveryProcessor extends WorkerHost {
   async process(job: Job): Promise<void> {
     // TODO: Implement based on job.name

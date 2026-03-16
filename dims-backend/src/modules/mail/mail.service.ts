@@ -1,11 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
-import { Message } from './entities/message.entity';
-import { Thread } from './entities/thread.entity';
-import { MessageRecipient } from './entities/message-recipient.entity';
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { InjectQueue } from "@nestjs/bullmq";
+import { Queue } from "bullmq";
+import { Message } from "./entities/message.entity";
+import { Thread } from "./entities/thread.entity";
+import { MessageRecipient } from "./entities/message-recipient.entity";
 
 @Injectable()
 export class MailService {
@@ -16,7 +16,7 @@ export class MailService {
     private readonly threadRepo: Repository<Thread>,
     @InjectRepository(MessageRecipient)
     private readonly recipientRepo: Repository<MessageRecipient>,
-    @InjectQueue('mail-delivery')
+    @InjectQueue("mail-delivery")
     private readonly mailQueue: Queue,
   ) {}
 

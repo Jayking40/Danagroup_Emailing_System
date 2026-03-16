@@ -1,9 +1,17 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
-import { Subsidiary } from './subsidiary.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+} from "typeorm";
+import { Subsidiary } from "./subsidiary.entity";
 
-@Entity('departments')
+@Entity("departments")
 export class Department {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
   @Column()
@@ -13,12 +21,12 @@ export class Department {
   subsidiaryId: string;
 
   @ManyToOne(() => Subsidiary)
-  @JoinColumn({ name: 'subsidiaryId' })
+  @JoinColumn({ name: "subsidiaryId" })
   subsidiary: Subsidiary;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ type: "timestamptz" })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
+  @UpdateDateColumn({ type: "timestamptz" })
   updatedAt: Date;
 }

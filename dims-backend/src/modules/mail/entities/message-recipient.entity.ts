@@ -1,27 +1,31 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column,
-  CreateDateColumn, ManyToOne, JoinColumn,
-} from 'typeorm';
-import { Message } from './message.entity';
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
+} from "typeorm";
+import { Message } from "./message.entity";
 
-export type RecipientType = 'to' | 'cc' | 'bcc';
+export type RecipientType = "to" | "cc" | "bcc";
 
-@Entity('message_recipients')
+@Entity("message_recipients")
 export class MessageRecipient {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
   @Column()
   messageId: string;
 
   @ManyToOne(() => Message)
-  @JoinColumn({ name: 'messageId' })
+  @JoinColumn({ name: "messageId" })
   message: Message;
 
   @Column()
   recipientId: string;
 
-  @Column({ type: 'enum', enum: ['to', 'cc', 'bcc'], default: 'to' })
+  @Column({ type: "enum", enum: ["to", "cc", "bcc"], default: "to" })
   type: RecipientType;
 
   @Column({ default: false })
@@ -36,9 +40,9 @@ export class MessageRecipient {
   @Column({ default: false })
   isArchived: boolean;
 
-  @Column({ nullable: true, type: 'timestamptz' })
+  @Column({ nullable: true, type: "timestamptz" })
   readAt: Date;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ type: "timestamptz" })
   createdAt: Date;
 }

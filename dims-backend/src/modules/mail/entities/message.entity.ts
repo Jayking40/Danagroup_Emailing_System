@@ -1,19 +1,23 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column,
-  CreateDateColumn, ManyToOne, JoinColumn,
-} from 'typeorm';
-import { Thread } from './thread.entity';
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
+} from "typeorm";
+import { Thread } from "./thread.entity";
 
-@Entity('messages')
+@Entity("messages")
 export class Message {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
   @Column()
   threadId: string;
 
   @ManyToOne(() => Thread)
-  @JoinColumn({ name: 'threadId' })
+  @JoinColumn({ name: "threadId" })
   thread: Thread;
 
   @Column()
@@ -22,18 +26,18 @@ export class Message {
   @Column()
   subject: string;
 
-  @Column({ type: 'text' })
+  @Column({ type: "text" })
   body: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   bodyHtml: string;
 
   @Column({ default: false })
   isDraft: boolean;
 
-  @Column({ nullable: true, type: 'timestamptz' })
+  @Column({ nullable: true, type: "timestamptz" })
   sentAt: Date;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ type: "timestamptz" })
   createdAt: Date;
 }

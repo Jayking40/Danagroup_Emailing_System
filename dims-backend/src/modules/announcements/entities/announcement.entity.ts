@@ -1,10 +1,16 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from "typeorm";
 
-export type AnnouncementTarget = 'all' | 'subsidiary' | 'department';
+export type AnnouncementTarget = "all" | "subsidiary" | "department";
 
-@Entity('announcements')
+@Entity("announcements")
 export class Announcement {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
   @Column()
@@ -13,10 +19,14 @@ export class Announcement {
   @Column()
   title: string;
 
-  @Column({ type: 'text' })
+  @Column({ type: "text" })
   body: string;
 
-  @Column({ type: 'enum', enum: ['all', 'subsidiary', 'department'], default: 'all' })
+  @Column({
+    type: "enum",
+    enum: ["all", "subsidiary", "department"],
+    default: "all",
+  })
   target: AnnouncementTarget;
 
   @Column({ nullable: true })
@@ -28,12 +38,12 @@ export class Announcement {
   @Column({ default: false })
   isPinned: boolean;
 
-  @Column({ nullable: true, type: 'timestamptz' })
+  @Column({ nullable: true, type: "timestamptz" })
   publishedAt: Date;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ type: "timestamptz" })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
+  @UpdateDateColumn({ type: "timestamptz" })
   updatedAt: Date;
 }

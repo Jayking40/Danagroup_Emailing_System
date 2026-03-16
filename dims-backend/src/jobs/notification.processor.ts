@@ -1,5 +1,5 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Job } from 'bullmq';
+import { Processor, WorkerHost } from "@nestjs/bullmq";
+import { Job } from "bullmq";
 
 // TODO: Process 'notifications' queue jobs
 // Job names: 'announcement'
@@ -7,7 +7,7 @@ import { Job } from 'bullmq';
 //   announcement → for each targeted userId: NotificationsService.create(userId, 'announcement', ...)
 //                  then MailGateway.emitNotification(userId, payload)
 
-@Processor('notifications')
+@Processor("notifications")
 export class NotificationProcessor extends WorkerHost {
   async process(job: Job): Promise<void> {
     // TODO: Implement switch on job.name

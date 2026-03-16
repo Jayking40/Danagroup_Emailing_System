@@ -1,9 +1,9 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import * as Minio from 'minio';
-import { Attachment } from './entities/attachment.entity';
-import { MINIO_CLIENT, MINIO_BUCKET } from '../../config/storage.config';
+import { Injectable, Inject } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import * as Minio from "minio";
+import { Attachment } from "./entities/attachment.entity";
+import { MINIO_CLIENT, MINIO_BUCKET } from "../../config/storage.config";
 
 @Injectable()
 export class FilesService {

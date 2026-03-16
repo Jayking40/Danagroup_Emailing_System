@@ -1,8 +1,11 @@
 import {
-  WebSocketGateway, WebSocketServer,
-  SubscribeMessage, OnGatewayConnection, OnGatewayDisconnect,
-} from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+} from "@nestjs/websockets";
+import { Server, Socket } from "socket.io";
 
 // TODO: Implement WebSocket Gateway
 // - Namespace: /notifications
@@ -12,7 +15,7 @@ import { Server, Socket } from 'socket.io';
 // - Method emitNewMail(userId, message): emit 'new_mail' to user room
 // - Method emitNotification(userId, notification): emit 'notification' to user room
 
-@WebSocketGateway({ cors: { origin: '*' }, namespace: '/notifications' })
+@WebSocketGateway({ cors: { origin: "*" }, namespace: "/notifications" })
 export class MailGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
@@ -26,16 +29,16 @@ export class MailGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // TODO: Clean up
   }
 
-  @SubscribeMessage('subscribe')
+  @SubscribeMessage("subscribe")
   handleSubscribe(client: Socket, payload: { userId: string }) {
     // TODO: Join user room
   }
 
   emitNewMail(userId: string, payload: any) {
-    this.server.to(userId).emit('new_mail', payload);
+    this.server.to(userId).emit("new_mail", payload);
   }
 
   emitNotification(userId: string, payload: any) {
-    this.server.to(userId).emit('notification', payload);
+    this.server.to(userId).emit("notification", payload);
   }
 }
