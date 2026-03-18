@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class AutoMigration1773822696305 implements MigrationInterface {
-    name = 'AutoMigration1773822696305'
+export class InitialSchema1773837405940 implements MigrationInterface {
+    name = 'InitialSchema1773837405940'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`CREATE TABLE "subsidiaries" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "name" character varying(100) NOT NULL, "domain" character varying(50) NOT NULL, "description" text, "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "UQ_02a78cf30080bf9b52e8f856cbe" UNIQUE ("name"), CONSTRAINT "UQ_374018dd0f1f752bbd79fa0a886" UNIQUE ("domain"), CONSTRAINT "PK_34ded851c22b6628bfc8e3bd236" PRIMARY KEY ("id"))`);
@@ -17,6 +17,7 @@ export class AutoMigration1773822696305 implements MigrationInterface {
         await queryRunner.query(`CREATE TABLE "notifications" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "type" "public"."notifications_type_enum" NOT NULL DEFAULT 'system', "title" character varying NOT NULL, "body" text, "is_read" boolean NOT NULL DEFAULT false, "reference_id" uuid, "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "user_id" uuid NOT NULL, CONSTRAINT "PK_6a72c3c0f683f6462415e653c3a" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE TYPE "public"."users_role_enum" AS ENUM('employee', 'manager', 'subsidiary_admin', 'group_admin')`);
         await queryRunner.query(`CREATE TABLE "users" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "email" character varying(100) NOT NULL, "passwordHash" character varying(255) NOT NULL, "firstName" character varying(100) NOT NULL, "lastName" character varying(100) NOT NULL, "role" "public"."users_role_enum" NOT NULL DEFAULT 'employee', "jobTitle" character varying(150) NOT NULL, "avatarUrl" character varying(255) NOT NULL, "isActive" boolean NOT NULL DEFAULT true, "lastLoginAt" TIMESTAMP WITH TIME ZONE, "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "department_id" uuid NOT NULL, "subsidiary_id" uuid NOT NULL, CONSTRAINT "UQ_97672ac88f789774dd47f7c8be3" UNIQUE ("email"), CONSTRAINT "PK_a3ffb1c0c8416b9fc6f907b7433" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`ALTER TABLE "departments" ADD CONSTRAINT "FK_62c11dc60cf31d3f558fae5728d" FOREIGN KEY ("subsidiary_id") REFERENCES "subsidiaries"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
         await queryRunner.query(`ALTER TABLE "announcements" ADD CONSTRAINT "FK_0a13cf0aa1f1a2666699ff473f0" FOREIGN KEY ("author_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
         await queryRunner.query(`ALTER TABLE "announcements" ADD CONSTRAINT "FK_1740d0897aaa72577b42f01cd34" FOREIGN KEY ("subsidiary_id") REFERENCES "subsidiaries"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
         await queryRunner.query(`ALTER TABLE "announcements" ADD CONSTRAINT "FK_7d16e55d9e082728d84ddf25b8a" FOREIGN KEY ("department_id") REFERENCES "departments"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
@@ -42,6 +43,7 @@ export class AutoMigration1773822696305 implements MigrationInterface {
         await queryRunner.query(`ALTER TABLE "announcements" DROP CONSTRAINT "FK_7d16e55d9e082728d84ddf25b8a"`);
         await queryRunner.query(`ALTER TABLE "announcements" DROP CONSTRAINT "FK_1740d0897aaa72577b42f01cd34"`);
         await queryRunner.query(`ALTER TABLE "announcements" DROP CONSTRAINT "FK_0a13cf0aa1f1a2666699ff473f0"`);
+        await queryRunner.query(`ALTER TABLE "departments" DROP CONSTRAINT "FK_62c11dc60cf31d3f558fae5728d"`);
         await queryRunner.query(`DROP TABLE "users"`);
         await queryRunner.query(`DROP TYPE "public"."users_role_enum"`);
         await queryRunner.query(`DROP TABLE "notifications"`);

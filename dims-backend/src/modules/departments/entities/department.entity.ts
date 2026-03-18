@@ -7,6 +7,7 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  Unique,
 } from "typeorm";
 import { Subsidiary } from "./subsidiary.entity";
 import { User } from "@modules/users/entities/user.entity";
@@ -21,10 +22,12 @@ export class Department {
   name: string;
 
   @CreateDateColumn({name: "created_at", type: "timestamptz", default: () => 'CURRENT_TIMESTAMP'})
-  createdAt: Date;
+  created_at: Date;
 
   @UpdateDateColumn({name: "updated_at", type: "timestamptz", default: () => 'CURRENT_TIMESTAMP' })
-  updatedAt: Date;
+  updated_at: Date;
+
+  @Unique(["name", "subsidiary"])
 
   // Relationships
 
@@ -32,7 +35,7 @@ export class Department {
   @Column({type: "uuid"})
   subsidiary_id: string;
 
-  @OneToMany(() => Subsidiary, (subsidiary) => subsidiary.departments, {
+  @ManyToOne(() => Subsidiary, (subsidiary) => subsidiary.departments, {
     nullable: false,
     onDelete: "CASCADE"
   })

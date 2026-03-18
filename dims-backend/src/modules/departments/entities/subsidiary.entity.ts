@@ -24,10 +24,10 @@ export class Subsidiary {
   description: string;
 
   @CreateDateColumn({name: "created_at", type: "timestamptz", default: () => 'CURRENT_TIMESTAMP' })
-  createdAt: Date;
+  created_at: Date;
 
   @UpdateDateColumn({name: "updated_at", type: "timestamptz", default: () => 'CURRENT_TIMESTAMP' })
-  updatedAt: Date;
+  updated_at: Date;
 
   // Relationships
   @OneToMany(() => Department, (department) => department.subsidiary)
