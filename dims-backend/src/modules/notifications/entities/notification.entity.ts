@@ -16,14 +16,13 @@ export class Notification {
   id: string;
 
   @Column({
-    length: 50,
     type: "enum",
     enum: ["new_mail", "announcement", "system"],
     default: "system",
   })
   type: NotificationType;
 
-  @Column({ length: 255 })
+  @Column()
   title: string;
 
   @Column({ nullable: true, type: "text" })
