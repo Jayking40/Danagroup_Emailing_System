@@ -19,9 +19,11 @@ import { HealthModule } from './health/health.module';
 
 // Config
 import databaseConfig from "./config/database.config";
+import { TerminusModule } from "@nestjs/terminus";
 
 @Module({
   imports: [
+    TerminusModule,
     /**
      * Global Environment Config
      */
@@ -100,5 +102,6 @@ import databaseConfig from "./config/database.config";
     JobsModule,
     HealthModule,
   ],
+
 })
 export class AppModule {}
