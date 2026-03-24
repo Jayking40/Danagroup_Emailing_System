@@ -27,15 +27,15 @@ export class AuthService {
   // - Find user by email from UsersService
   // - Compare password hash using bcrypt.compare
   // - Return user without password if valid, null otherwise
-  async ValidateUser (email:string, password:string) {
+  async validateUser (email:string, password:string) {
     const user = await this.usersService.findByEmail(email);
 
     if (!user) return null;
 
-    const isMatch = await bcrypt.compare(password, user.password)
+    const isMatch = await bcrypt.compare(password, user.passwordHash)
     if (!isMatch) return null;
 
-    const { password: _, ...result } = user;
+    const { passwordHash: _, ...result } = user;
     return result
   };
   
@@ -54,7 +54,7 @@ export class AuthService {
     });
 
     const refreshToken = await this.jwtService.signAsync(payload, {
-      secret: this.config.get("JWT_REFRESH_TOKEN"),
+      secret: this.config.get("JWT_REFRESH_SECRET"),
       expiresIn: "7d",
     });
 
@@ -67,14 +67,21 @@ export class AuthService {
   // - Sign JWT access token (payload: { sub: user.id, email, role })
   // - Sign refresh token with longer expiry (JWT_REFRESH_SECRET)
   // - Return both tokens + user object
-  async Login(user: any) {
+  async login(user: any, userAgent?: string, ip?: string) {
     const tokens = await this.generateTokens(user);
 
     //hash refreshToken before storing
     const hashedRefresh = await bcrypt.hash(tokens.refreshToken, 12);
 
     await this.usersService.update(user.id, {
-      refreshToken: hashedRefresh,
+      sessions: [
+        ...(user.sessions || []),
+        {
+          refreshToken: hashedRefresh,
+          userAgent: userAgent || "unkwown",
+          ip: ip || "unknown"
+        },
+      ],
     });
 
     return {
@@ -92,36 +99,49 @@ export class AuthService {
   async refresh(refreshToken: string) {
     try {
       const payload = await this.jwtService.verifyAsync(refreshToken, {
-        secret: this.config.get("JWT_REFRESH_SECRET"),
+        secret: this.config.get<string>("JWT_REFRESH_SECRET"),
       });
 
-      const user = await this.usersService.findByID(payload.sub);
+      const user = await this.usersService.findById(payload.sub);
 
-      if (!user || !user.refreshToken) {
+      if (!user || !user.sessions?.length) {
         throw new UnauthorizedException();
       }
 
-      const isValid = await bcrypt.compare(
-        refreshToken,
-        user.refreshToken
-      );
+      // find matching sessions
 
-      if (!isValid) {
+      let sessionIndex = -1;
+      for (let i = 0; i < user.sessions.length; i++) {
+        const match = await bcrypt.compare(
+          refreshToken,
+          user.sessions[i].refreshToken
+        );
+
+          if (match) {
+          sessionIndex = i;
+          break;
+        }
+      }
+
+      if (sessionIndex === -1) {
         throw new UnauthorizedException();
       }
 
       const tokens = await this.generateTokens(user);
 
-      //rotate refreshToken
+      // rotate ONLY the matched session
       const hashedRefresh = await bcrypt.hash(tokens.refreshToken, 12);
 
+      user.sessions[sessionIndex].refreshToken = hashedRefresh;
+
+
       await this.usersService.update(user.id, {
-        refreshToken: hashedRefresh,
+        sessions: user.sessions,
       });
 
       return tokens;
 
-    } catch (error) {
+    } catch {
       throw  new UnauthorizedException("Invalid refresh token");
     }
   }
@@ -130,7 +150,7 @@ export class AuthService {
 
   // TODO: Implement logout(): void
   // - Optionally blacklist refresh token in Redis (for full invalidation)
-  async logOut(userId: string, accessToken: string) {
+  async logout(userId: string, accessToken: string, refreshToken: string) {
     //blacklist access token
     await this.redis.set(
       `bl: ${accessToken}`,
@@ -140,8 +160,20 @@ export class AuthService {
     );
 
     //remove refresh token
+    const user = await this.usersService.findById(userId);
+
+    const filteredSessions = [];
+
+    for (const session of user.sessions || []) {
+      const match = await bcrypt.compare(refreshToken, session.refreshToken);
+      if (!match) {
+        filteredSessions.push(session);
+      }
+    }
+
+
     await this.usersService.update(userId, {
-      refreshToken: null,
+      sessions: filteredSessions,
     });
 
     return { message: "Logged out successfully"}

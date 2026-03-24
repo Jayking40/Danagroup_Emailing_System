@@ -51,7 +51,7 @@ export class UsersService {
 
   }
   // TODO: Implement findById(id): User
-  async findByID(id: string): Promise<User> {
+  async findById(id: string): Promise<User> {
     const user = await this.userRepo.findOne({
       where: { id },
     });
@@ -67,20 +67,32 @@ export class UsersService {
   async findByEmail(email: string): Promise<User | null> {
     return this.userRepo.findOne({
       where: { email },
+      select: [
+        "id",
+        "email",
+        "passwordHash",
+        "role",
+        "isActive",
+        "firstName",
+        "lastName",
+      ]
     });
   }
   // TODO: Implement search(query): User[] (for RecipientInput autocomplete)
   async search(query: string): Promise<User[]> {
     if (!query) return [];
 
-    return this.userRepo.find({
-      where: [
-        { email: ILike(`%${query}%`) },
-        { name: ILike(`%${query}%`) },
-      ],
-      take: 10, //limit autocomplete results
-      order: { createdAt: "DESC"},
-    });
+    return this.userRepo
+    .createQueryBuilder("user")
+    .where("user.email ILIKE :query", { query: `%${query}%` })
+    .orWhere("user.firstName ILIKE :query", { query: `%${query}%` })
+    .orWhere("user.lastName ILIKE :query", { query: `%${query}%` })
+    .orWhere(
+      "CONCAT(user.firstName, ' ', user.lastName) ILIKE :query",
+      { query: `%${query}%` }
+    )
+    .limit(10)
+    .getMany();
   }
   // TODO: Implement create(dto): User (admin only)
   async create(dto: Partial<User>): Promise<User> {
@@ -89,14 +101,14 @@ export class UsersService {
   }
   // TODO: Implement update(id, dto): User (admin or self)
   async update(id: string, dto: Partial<User>): Promise<User> {
-    const user = await this.findByID(id);
+    const user = await this.findById(id);
 
     Object.assign(user, dto);
     return this.userRepo.save(user);
   }
   // TODO: Implement deactivate(id): void (admin only, sets is_active = false)
   async deactivate(id: string): Promise<void> {
-    const user = await this.findByID(id);
+    const user = await this.findById(id);
 
     user.isActive = false;
     await this.userRepo.save(user);

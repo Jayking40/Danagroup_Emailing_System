@@ -83,8 +83,8 @@ import { TerminusModule } from "@nestjs/terminus";
      */
     ThrottlerModule.forRoot([
       {
-        ttl: 60_000,
         limit: 100,
+        ttl: 60_000,
       },
     ]),
 

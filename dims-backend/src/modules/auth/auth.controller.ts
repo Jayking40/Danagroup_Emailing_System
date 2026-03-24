@@ -10,12 +10,14 @@ import {
   HttpStatus,
   UnauthorizedException,
 } from "@nestjs/common";
+import { Response, Request } from "express";
 import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
 import { ApiResponseDto } from "@common/dto/api-response.dto";
 import { Throttle } from "@nestjs/throttler";
+import { AuthGuard } from "@nestjs/passport";
 
 @ApiTags("auth")
 @Controller("auth")
@@ -27,31 +29,77 @@ export class AuthController {
   // - Set httpOnly access_token cookie
   // - Set httpOnly refresh_token cookie
   // - Return user object
-  @Throttle(100, 60_000)
   @Post("login")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Login with email and password" })
   @ApiResponse({ status: 200, description: "Login successful" })
   @ApiResponse({ status: 401, description: "Invalid credentials" })
-  async login(@Body() loginDto: LoginDto) {
+  async login(
+    @Body() loginDto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+    @Req() req: Request,
+  ) {
     // TODO: Implement
-    const user = await this.authService.ValidateUser(loginDto.email, loginDto.password);
+    const user = await this.authService.validateUser(
+      loginDto.email, 
+      loginDto.password
+    );
 
     if (!user) throw new UnauthorizedException("Invalid credentials");
 
-    const result = await this.authService.Login(user);
+    const result = await this.authService.login(
+      user,
+      req.headers["user-agent"],
+      req.ip
+    );
+    
 
-    return new ApiResponseDto(true, "Login successful", result)
+    // Set Cookies
+    res.cookie("access_token", result.accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 15 * 60 * 1000, // 15 min
+    })
+
+    res.cookie("refresh_token", result.refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    return new ApiResponseDto(true, "Login successful", {
+      user: result.user,
+    });
   }
 
   // TODO: Implement POST /auth/logout
   // - Clear access_token and refresh_token cookies
+  @UseGuards(AuthGuard("jwt"))
   @Post("logout")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Logout current session" })
-  async logout(@Res({ passthrough: true }) res: any) {
+  async logout(
+    @Req() req: any,
+    @Res({ passthrough: true }) res: Response
+  ) {
     // TODO: Implement
-     return this.authService.logout(req.user.sub, token);
+    const accessToken = req.cookies?.access_token;
+    const refreshToken = req.cookies?.refresh_token;
+
+    await this.authService.logout(
+      req.user.userId,
+      accessToken,
+      refreshToken
+    );
+
+    // clear cookies
+    res.clearCookie("access_token");
+    res.clearCookie("refresh_token");
+
+
+    return new ApiResponseDto(true, "Logged out successfully");
   }
 
   // TODO: Implement POST /auth/refresh
@@ -60,16 +108,39 @@ export class AuthController {
   @Post("refresh")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Refresh access token" })
-  async refresh(@Body() refreshTokenDto: RefreshTokenDto) {
+  async refresh(
+    @Body() refreshTokenDto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     // TODO: Implement
+
+    const refreshToken = refreshTokenDto.refreshToken || req.cookies?.refresh_token;
+
+    if (!refreshToken) {
+      throw new UnauthorizedException("No refresh token provided");
+    }
+
+    const tokens = await this.authService.refresh(refreshToken);
+    res.cookie("access_token", tokens.accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 15 * 60 * 1000,
+    });
+
+    return new ApiResponseDto(true, "Token refreshed");
+
   }
 
   // TODO: Implement GET /auth/me
   // - Protected route (JWT guard)
   // - Returns current authenticated user
+  @UseGuards(AuthGuard("jwt"))
   @Get("me")
   @ApiOperation({ summary: "Get current authenticated user" })
   async me(@Req() req: any) {
     // TODO: Implement
+    return new ApiResponseDto(true, "User fetched", req.user);
   }
 }
