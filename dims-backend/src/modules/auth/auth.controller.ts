@@ -13,22 +13,30 @@ import {
 import { Response, Request } from "express";
 import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
+import { UsersService } from "../users/users.service";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
 import { ApiResponseDto } from "@common/dto/api-response.dto";
 import { Throttle } from "@nestjs/throttler";
 import { AuthGuard } from "@nestjs/passport";
+import { CurrentUser } from "@common/decorators/current-user.decorator";
+import { Public } from "@common/decorators/public.decorator";
+import { Roles } from "@common/decorators/roles.decorator";
 
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService, 
+    private readonly usersService: UsersService
+  ) {}
 
   // TODO: Implement POST /auth/login
   // - Validate credentials via AuthService.login
   // - Set httpOnly access_token cookie
   // - Set httpOnly refresh_token cookie
   // - Return user object
+  @Public()
   @Post("login")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Login with email and password" })
@@ -50,21 +58,21 @@ export class AuthController {
     const result = await this.authService.login(
       user,
       req.headers["user-agent"],
-      req.ip
+      req.ip,
     );
     
 
     // Set Cookies
     res.cookie("access_token", result.accessToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
       maxAge: 15 * 60 * 1000, // 15 min
     })
 
     res.cookie("refresh_token", result.refreshToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
@@ -81,6 +89,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Logout current session" })
   async logout(
+    @CurrentUser() user: any,
     @Req() req: any,
     @Res({ passthrough: true }) res: Response
   ) {
@@ -89,7 +98,7 @@ export class AuthController {
     const refreshToken = req.cookies?.refresh_token;
 
     await this.authService.logout(
-      req.user.userId,
+      user.userId,
       accessToken,
       refreshToken
     );
@@ -105,6 +114,7 @@ export class AuthController {
   // TODO: Implement POST /auth/refresh
   // - Accept refresh token from cookie or body
   // - Return new access_token
+  @Public()
   @Post("refresh")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Refresh access token" })
@@ -124,7 +134,7 @@ export class AuthController {
     const tokens = await this.authService.refresh(refreshToken);
     res.cookie("access_token", tokens.accessToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
       maxAge: 15 * 60 * 1000,
     });
@@ -139,8 +149,15 @@ export class AuthController {
   @UseGuards(AuthGuard("jwt"))
   @Get("me")
   @ApiOperation({ summary: "Get current authenticated user" })
-  async me(@Req() req: any) {
+  async me(@CurrentUser() user: any) {
     // TODO: Implement
-    return new ApiResponseDto(true, "User fetched", req.user);
+    const fullUser = await this.usersService.findById(user.userId);
+    return new ApiResponseDto(true, "User fetched", fullUser);
+  }
+
+  @Roles("group_admin")
+  @Get("admin-only")
+  getAdminData() {
+    return "Only admins";
   }
 }

@@ -20,6 +20,10 @@ import { HealthModule } from './health/health.module';
 // Config
 import databaseConfig from "./config/database.config";
 import { TerminusModule } from "@nestjs/terminus";
+import { APP_GUARD } from "@nestjs/core";
+import { AuthGuard } from "@nestjs/passport";
+import { RolesGuard } from "@common/guards/roles.guards";
+import { JwtAuthGuard } from "@common/guards/jwt-auth.guard";
 
 @Module({
   imports: [
@@ -101,6 +105,17 @@ import { TerminusModule } from "@nestjs/terminus";
     SearchModule,
     JobsModule,
     HealthModule,
+  ],
+
+  providers: [
+    {
+    provide: APP_GUARD,
+    useClass: JwtAuthGuard,
+  },
+  {
+    provide: APP_GUARD,
+    useClass: RolesGuard,
+  },
   ],
 
 })

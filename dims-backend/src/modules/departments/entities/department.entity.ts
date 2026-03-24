@@ -27,7 +27,7 @@ export class Department {
   @UpdateDateColumn({name: "updated_at", type: "timestamptz", default: () => 'CURRENT_TIMESTAMP' })
   updated_at: Date;
 
-  @Unique(["name", "subsidiary"])
+  @Unique(["name", "subsidiary_id"])
 
   // Relationships
 
