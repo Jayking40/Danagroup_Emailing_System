@@ -7,8 +7,15 @@
 // - Danger: dana-red background, white text
 // - Outline: transparent bg, dana-blue border + text
 // - Ghost: transparent bg, no border
-
-export default function Button() {
+interface btnProp {
+  label: string;
+  btnStyle: string;
+}
+export default function Button({label, btnStyle}: btnProp) {
   // TODO: Implement
-  return null;
+  return (
+    <button className={btnStyle}>
+      {label}
+    </button>
+  )
 }

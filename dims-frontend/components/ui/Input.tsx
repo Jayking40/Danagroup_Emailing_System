@@ -5,7 +5,17 @@
 // - Renders optional label above, error message below in dana-red
 // - Supports left/right icon slots
 
-export default function Input() {
+interface InputProp {
+  title: string;
+  placeholder: string;
+}
+
+export default function Input({title, placeholder}: InputProp) {
   // TODO: Implement
-  return null;
+  return (
+    <div >
+      <p className="text-xs mb-1 text-gray-500">{title}</p>
+      <input type="text"  className="border-gray-300 rounded pl-3 focus:outline-none focus:ring-2 focus:ring-dana-blue-300 focus:border-transparent border-[1px] py-1 shadow-sm w-full target:text-gray-400 placeholder:text-xs"  placeholder={placeholder}/>
+    </div>
+  )
 }
