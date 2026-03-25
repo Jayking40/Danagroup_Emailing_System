@@ -45,15 +45,9 @@ export class Message {
   @JoinColumn({ name: "thread_id" })
   thread: Thread;
 
-  @Column({ type: 'uuid' })
-  thread_id: string;
-
   @ManyToOne(() => User)
   @JoinColumn({ name: "sender_id" })
   sender: User;
-
-  @Column({ type: 'uuid' })
-  sender_id: string;
 
   @OneToMany(() => MessageRecipient, (recipient) => recipient.message)
   recipients: MessageRecipient[];

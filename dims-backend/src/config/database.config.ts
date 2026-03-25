@@ -10,7 +10,7 @@ export default (config: ConfigService): TypeOrmModuleOptions => ({
 
   database: config.get<string>("DB_NAME", "dims_db"),
   username: config.get<string>("DB_USER", "dims_user"),
-  password: config.get<string>("DB_PASSWORD", "dims_password"),
+  password: config.get<string>("DB_PASSWORD", "password"),
 
   autoLoadEntities: true,
 

@@ -15,15 +15,31 @@ async function seed() {
     const subRepo = AppDataSource.getRepository(Subsidiary);
     const deptRepo = AppDataSource.getRepository(Department);
 
-    // 1. Fetch the exact records created by your migration
-    const hqSubsidiary = await subRepo.findOneBy({ domain: 'danagroup.com' });
-    const itDept = await deptRepo.findOneBy({ 
-        name: 'IT', 
-        subsidiary_id: hqSubsidiary?.id 
+    let hqSubsidiary = await subRepo.findOneBy({ domain: 'danagroup.com' });
+    if (!hqSubsidiary) {
+      hqSubsidiary = await subRepo.save(
+        subRepo.create({
+          name: 'Dana Group HQ',
+          domain: 'danagroup.com',
+          description: 'Default HQ subsidiary for local development',
+        }),
+      );
+      console.log('Created subsidiary: Dana Group HQ');
+    }
+
+    let itDept = await deptRepo.findOneBy({
+      name: 'IT',
+      subsidiary_id: hqSubsidiary.id,
     });
 
-    if (!hqSubsidiary || !itDept) {
-      throw new Error("Required Subsidiary (Dana Group HQ) or Department (IT) not found. Did you run the migration?");
+    if (!itDept) {
+      itDept = await deptRepo.save(
+        deptRepo.create({
+          name: 'IT',
+          subsidiary_id: hqSubsidiary.id,
+        }),
+      );
+      console.log('Created department: IT');
     }
 
     const users: DeepPartial<User>[] = [

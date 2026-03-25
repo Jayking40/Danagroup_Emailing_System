@@ -11,17 +11,28 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Response, Request } from "express";
-import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOkResponse,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { UsersService } from "../users/users.service";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
 import { ApiResponseDto } from "@common/dto/api-response.dto";
-import { Throttle } from "@nestjs/throttler";
 import { AuthGuard } from "@nestjs/passport";
 import { CurrentUser } from "@common/decorators/current-user.decorator";
 import { Public } from "@common/decorators/public.decorator";
 import { Roles } from "@common/decorators/roles.decorator";
+import {
+  CurrentUserResponseDto,
+  LoginResponseDto,
+  MessageResponseDto,
+} from "./dto/auth-response.dto";
 
 @ApiTags("auth")
 @Controller("auth")
@@ -39,8 +50,12 @@ export class AuthController {
   @Public()
   @Post("login")
   @HttpCode(HttpStatus.OK)
+  @ApiBody({ type: LoginDto })
   @ApiOperation({ summary: "Login with email and password" })
-  @ApiResponse({ status: 200, description: "Login successful" })
+  @ApiOkResponse({
+    description: "Login successful",
+    type: LoginResponseDto,
+  })
   @ApiResponse({ status: 401, description: "Invalid credentials" })
   async login(
     @Body() loginDto: LoginDto,
@@ -80,6 +95,16 @@ export class AuthController {
     return new ApiResponseDto(true, "Login successful", {
       user: result.user,
     });
+
+    // return {
+    //   success: true,
+    //   message: "Login successful",
+    //   data: {
+    //     user: result.user,
+    //     accessToken: result.accessToken, // <--- ADD THIS so you can copy it to Swagger
+    //     refreshToken: result.refreshToken,
+    //   }
+    // };
   }
 
   // TODO: Implement POST /auth/logout
@@ -87,7 +112,12 @@ export class AuthController {
   @UseGuards(AuthGuard("jwt"))
   @Post("logout")
   @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
   @ApiOperation({ summary: "Logout current session" })
+  @ApiOkResponse({
+    description: "Logout successful",
+    type: MessageResponseDto,
+  })
   async logout(
     @CurrentUser() user: any,
     @Req() req: any,
@@ -117,7 +147,12 @@ export class AuthController {
   @Public()
   @Post("refresh")
   @HttpCode(HttpStatus.OK)
+  @ApiBody({ type: RefreshTokenDto })
   @ApiOperation({ summary: "Refresh access token" })
+  @ApiOkResponse({
+    description: "Token refreshed successfully",
+    type: MessageResponseDto,
+  })
   async refresh(
     @Body() refreshTokenDto: RefreshTokenDto,
     @Req() req: Request,
@@ -148,7 +183,12 @@ export class AuthController {
   // - Returns current authenticated user
   @UseGuards(AuthGuard("jwt"))
   @Get("me")
+  @ApiBearerAuth()
   @ApiOperation({ summary: "Get current authenticated user" })
+  @ApiOkResponse({
+    description: "Current authenticated user",
+    type: CurrentUserResponseDto,
+  })
   async me(@CurrentUser() user: any) {
     // TODO: Implement
     const fullUser = await this.usersService.findById(user.userId);
@@ -157,6 +197,7 @@ export class AuthController {
 
   @Roles("group_admin")
   @Get("admin-only")
+  @ApiBearerAuth()
   getAdminData() {
     return "Only admins";
   }

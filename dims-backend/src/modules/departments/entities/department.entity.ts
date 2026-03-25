@@ -14,6 +14,7 @@ import { User } from "@modules/users/entities/user.entity";
 
 
 @Entity("departments")
+@Unique(["name", "subsidiary_id"])
 export class Department {
   @PrimaryGeneratedColumn("uuid")
   id: string;
@@ -26,8 +27,6 @@ export class Department {
 
   @UpdateDateColumn({name: "updated_at", type: "timestamptz", default: () => 'CURRENT_TIMESTAMP' })
   updated_at: Date;
-
-  @Unique(["name", "subsidiary_id"])
 
   // Relationships
 
