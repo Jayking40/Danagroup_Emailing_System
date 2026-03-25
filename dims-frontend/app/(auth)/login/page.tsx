@@ -10,53 +10,64 @@
 // }
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-blue-900">
-      <div className="bg-white p-8 rounded-xl shadow-lg w-96">
+    <div className="min-h-screen flex items-center justify-center w-full">
+      {/* Image */}
+      <div className="h-screen w-full"></div>
+
+      
+
+      <div className="shadow-xl h-screen w-full flex justify-center items-center relative">
         
-        {/* LOGO */}
-        <div className="flex justify-center mb-6">
-          <img
-            src="https://www.danagroup.com/dgc-logo.png"
-            alt="Dana Group Logo"
-            className="h-12"
-          />
-        </div>
-
-        {/* <h2 className="text-2xl font-bold mb-6 text-center">
-          Dana Group Login
-        </h2> */}
-
-        <form className="flex flex-col gap-4">
-          <input
-            type="email"
-            placeholder="Email"
-            className="p-3 border rounded"
-          />
-
-          <input
-            type="password"
-            placeholder="Password"
-            className="p-3 border rounded"
-          />
-
-          <div className="flex justify-between text-sm text-gray-600">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                className="accent-green-500"
-              />
-              Remember
-            </label>
-
-            <a href="#" className="text-red-500">
-              Forgot Password?
-            </a>
+        {/* form */}
+        <div className="shadow-md h-[70%] w-[60%] z-20 bg-white">
+          <div>
+            <h3 className="font-medium tracking-wide">Welcome Back to Dana DIMS</h3>
+            <p>Sign in your account</p>
           </div>
 
-          <button className="bg-blue-600 text-white p-3 rounded hover:bg-blue-700">
-            Login
-          </button>
-        </form>
+          <div></div>
+          
+          <div>
+            <div>
+              <label>
+                <input type="checkbox" name="grocery-item" />
+                Remember Me
+              </label>
+            </div>
+            <div>Forgot Password</div>
+          </div>
+
+          <div></div>
+        </div>
+
+
+        {/* boxes */}
+
+        <div className="absolute top-[8vh] left-[6vw] h-24 w-24 rounded-lg bg-gradient-to-br from-red-600 via-blue-800 to-blue-400 p-[4px]">
+          <div className="h-full w-full rounded-sm bg-white"></div>
+        </div>
+
+
+        <div className="absolute top-[20vw] right-[2vw] ">
+
+          <div className="">
+            <div className="absolute z-10 right-[5vw] -bottom-[5vh] h-16 w-16 rounded-lg bg-gradient-to-br from-red-600 via-blue-800 to-blue-400 p-[4px]">
+              <div className="h-full w-full rounded-sm bg-white"></div>
+            </div>
+
+            <div className="absolute top-0 right-0 h-24 w-24 rounded-lg bg-gradient-to-br from-red-600 via-blue-800 to-blue-400 p-[4px]">
+              <div className="h-full w-full rounded-sm"></div>
+            </div>
+          </div>
+
+        </div>
+
+
+        <div className="absolute bottom-[4vh] left-[4vw] h-24 w-24 rounded-lg bg-gradient-to-br from-red-600 via-blue-800 to-blue-400 p-[4px]">
+          <div className="h-full w-full rounded-sm bg-white"></div>
+        </div>
+
+
       </div>
     </div>
   );
