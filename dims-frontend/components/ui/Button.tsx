@@ -10,12 +10,15 @@
 interface btnProp {
   label: string;
   btnStyle: string;
+  type?: "submit" | "button" | "reset"; 
+  onClick?: () => void;
+  disabled?: boolean;
 }
-export default function Button({label, btnStyle}: btnProp) {
+export default function Button({label, btnStyle, type, onClick, disabled}: btnProp) {
   // TODO: Implement
   return (
-    <button className={btnStyle}>
-      {label}
+    <button type={type} onClick={onClick} disabled={disabled} className={btnStyle}>
+      {disabled ? "Loading..." : label }
     </button>
   )
 }
