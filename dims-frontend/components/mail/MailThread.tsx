@@ -7,7 +7,3 @@
 // - Inline reply composer (ComposeModal in reply mode) pinned at bottom
 // - Forward action on the last message
 
-export default function MailThread() {
-  // TODO: Implement
-  return null;
-}

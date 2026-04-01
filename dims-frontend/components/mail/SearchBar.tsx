@@ -7,7 +7,3 @@
 // - Uses useSearch hook
 // - Keyboard shortcut: Ctrl+K or Cmd+K to focus
 
-export default function SearchBar() {
-  // TODO: Implement
-  return null;
-}

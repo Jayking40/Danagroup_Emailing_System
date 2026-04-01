@@ -7,7 +7,3 @@
 // - Shows star toggle icon (calls PATCH /api/mail/:id/star)
 // - Shows unread dot indicator for unread messages
 
-export default function MailListItem() {
-  // TODO: Implement
-  return null;
-}

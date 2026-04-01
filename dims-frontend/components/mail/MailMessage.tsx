@@ -8,7 +8,3 @@
 // - Action buttons: Reply, Forward, Star, Delete (shown on hover)
 // - Marks message as read on expand (PATCH /api/mail/:id/read)
 
-export default function MailMessage() {
-  // TODO: Implement
-  return null;
-}

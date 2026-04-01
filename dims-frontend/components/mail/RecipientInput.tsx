@@ -7,7 +7,3 @@
 // - Supports keyboard navigation (arrow keys, Enter to select, Backspace to remove)
 // - Validates that all recipients are @*.internal domain users
 
-export default function RecipientInput() {
-  // TODO: Implement
-  return null;
-}
