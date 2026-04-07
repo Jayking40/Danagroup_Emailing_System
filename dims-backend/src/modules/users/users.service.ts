@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ILike, Repository } from "typeorm";
-import { User } from "./entities/user.entity";
+import { User, UserRole } from "./entities/user.entity";
+import { QueryUserDto } from "./dto/query-user.dto";
+import { UpdateUserDto } from "./dto/update-user.dto";
+import { CreateUserDto } from "./dto/create-user.dto";
+import { UsersSearchService } from "./users-search.service";
 
 
 interface FindAllParams {
@@ -17,38 +21,48 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    private readonly usersSearch: UsersSearchService,
   ) {}
 
-  // TODO: Implement findAll(filters): paginated list of users
-  async findAll(params: FindAllParams) {
-    const {
-      page = 1,
-      limit = 10,
-      email,
-      role,
-      is_active,
-    } = params
-
-    const where: any = {};
-
-    if (email) where.email = ILike(`%${email}%`);
-    if (role) where.role = role;
-    if(is_active) where.is_active = is_active;
-
-    const [data, total] = await this.userRepo.findAndCount({
-      where,
-      skip: (page - 1) * limit,
-      take: limit,
-      order: { createdAt: "DESC"},
+  private handleError(method: string, error: any) {
+    // Do not mask NestJS known exceptions (BadRequestException, etc.)
+    console.error(`❌ UsersService.${method} failed:`, {
+      message: error.message,
+      stack: error.stack,
     });
+    throw error;
+  }
 
-    return {
-      data,
-      total,
-      page,
-      lastpage: Math.ceil(total/limit),
-    }
-
+  // TODO: Implement findAll(filters): paginated list of users
+  async findAll(query: QueryUserDto) {
+    try {
+      const { search, department, subsidiary, role, page, limit, sortBy } = query;
+      const where = [];
+      if (search) {
+        where.push([
+          { name: ILike(`%${search}%`) },
+          { email: ILike(`%${search}%`) },
+        ]);
+      }
+      if (department) where.push({ department });
+      if (subsidiary) where.push({ subsidiary });
+      if (role) where.push({ role });
+      const [data, total] = await this.userRepo.findAndCount({
+        where: where.length ? where : undefined,
+        take: limit,
+        skip: (page - 1) * limit,
+        order: { [sortBy]: 'ASC' },
+      });
+      return {
+        data,
+        pagination: {
+          total,
+          page,
+          limit,
+        },
+      };
+    } catch (error) {
+      this.handleError("findAll", error);    }
   }
   // TODO: Implement findById(id): User
   async findById(id: string): Promise<User> {
@@ -79,38 +93,72 @@ export class UsersService {
     });
   }
   // TODO: Implement search(query): User[] (for RecipientInput autocomplete)
-  async search(query: string): Promise<User[]> {
-    if (!query) return [];
+    // TODO: Implement search(query): User[] (for RecipientInput autocomplete)
+  async search(
+    query: string, 
+    filters: { department?: string; subsidiary?: string; role?: string },
+    page: number = 1,
+    limit: number = 10
+  ) {
+    try {
+      // Delegate the complex Elasticsearch logic to the dedicated search service
+      const result = await this.usersSearch.search(query, filters, page, limit);
 
-    return this.userRepo
-    .createQueryBuilder("user")
-    .where("user.email ILIKE :query", { query: `%${query}%` })
-    .orWhere("user.firstName ILIKE :query", { query: `%${query}%` })
-    .orWhere("user.lastName ILIKE :query", { query: `%${query}%` })
-    .orWhere(
-      "CONCAT(user.firstName, ' ', user.lastName) ILIKE :query",
-      { query: `%${query}%` }
-    )
-    .limit(10)
-    .getMany();
+      return {
+        data: result.results,
+        total: result.total,
+        page,
+        lastPage: Math.ceil(Number(result.total) / limit),
+      };
+    } catch (error) {
+      this.handleError("search", error);
+    }
   }
+
   // TODO: Implement create(dto): User (admin only)
-  async create(dto: Partial<User>): Promise<User> {
-    const user = this.userRepo.create(dto);
-    return this.userRepo.save(user);
+  async create(dto: CreateUserDto) {
+    try {
+      const newUser = this.userRepo.create({
+        ...dto,
+        role: dto.role as any,
+        subsidiary: dto.subsidiary ? { id: dto.subsidiary } : undefined,
+        department: dto.department ? { id: dto.department } : undefined,
+      });
+      const saved = await this.userRepo.save(newUser);
+      await this.usersSearch.indexUser(saved);
+      return saved;
+      
+    } catch (error) {
+      this.handleError("create", error);
+    }
   }
   // TODO: Implement update(id, dto): User (admin or self)
-  async update(id: string, dto: Partial<User>): Promise<User> {
-    const user = await this.findById(id);
-
-    Object.assign(user, dto);
-    return this.userRepo.save(user);
+  async update(id: string, dto: UpdateUserDto) {
+    try {
+      const existingUser = await this.findById(id);
+      const updatedUser = await this.userRepo.save({
+        ...existingUser, 
+        ...dto,
+        role: dto.role as any,
+        subsidiary: dto.subsidiary ? { id: dto.subsidiary } : undefined,
+        department: dto.department ? { id: dto.department } : undefined,
+      });
+      await this.usersSearch.indexUser(updatedUser);
+      return updatedUser;
+      
+    } catch (error) {
+      this.handleError("update", error);
+    }
   }
   // TODO: Implement deactivate(id): void (admin only, sets is_active = false)
   async deactivate(id: string): Promise<void> {
-    const user = await this.findById(id);
+    try {
+      const user = await this.findById(id);
 
-    user.isActive = false;
-    await this.userRepo.save(user);
+      user.isActive = false;
+      await this.userRepo.save(user);
+    } catch (error) {
+      this.handleError("deactivate", error);
+    }
   }
 }
