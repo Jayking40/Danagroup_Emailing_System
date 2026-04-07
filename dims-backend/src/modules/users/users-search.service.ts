@@ -2,71 +2,73 @@
 import { Injectable } from '@nestjs/common';
 import { ElasticsearchService } from '@nestjs/elasticsearch';
 import { User } from './entities/user.entity';
+import { MailService } from '@modules/mail/mail.service';
+import { SearchService } from '@modules/search/search.service';
 
-interface UserSearchBody {
-  firstName: string;
-  lastName: string;
-  email: string;
-  role: string;
-  department?: string;
-  subsidiary?: string;
-  isActive: boolean;
-  avatarUrl: string;
-  createdAt: Date;
+export interface UnifiedSearchResult {
+  type: 'user' | 'mail';
+  id: string;
+  title: string;    // Name for users, Subject for mail
+  subtitle: string; // Email for users, Preview text for mail
+  url: string;      // e.g., /dashboard/users/123 or /dashboard/mail/456
 }
 
 @Injectable()
 export class UsersSearchService {
   private readonly index = 'users';
 
-  constructor(private readonly es: ElasticsearchService) {}
+  constructor(
+    private readonly searchService: SearchService, // Assuming you have a SearchService to query Elasticsearch
+    private readonly mailService: MailService, // Assuming you have a MailService to query mails
+) {}
 
-  async indexUser(user: User) {
-    return this.es.index<UserSearchBody>({
-      index: this.index,
-      id: user.id,
-      document: {
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        department: user.department?.name,
-        subsidiary: user.subsidiary?.name,
-        role: user.role,
-        isActive: user.isActive,
-        avatarUrl: user.avatarUrl,
-        createdAt: user.createdAt,
-      },
-    });
-  }
+     // TODO: Implement search(query, type, requesterId): SearchResult[]
+  //   - type: 'mail' | 'users' | 'all'
+  //   - For mail: query dims-messages where requesterId is sender or recipient
+  //   - For users: query dims-users (all active users)
+  //   - Returns unified SearchResult[] { type, id, title, subtitle, url }
+    async unifiedSearch(
+        query: string,
+        type: 'mail' | 'users' | 'all' = 'all',
+        requesterId: string,
+        page = 1,
+        limit = 10,
+        filters?: { department?: string; subsidiary?: string; role?: string }
+    ) {
+        const results: UnifiedSearchResult[] = [];
+        let total = 0;
 
-  async remove(id: string) {
-    return this.es.delete({ index: this.index, id });
-  }
+        // 1. SEARCH USERS (Elasticsearch)
+        if (type === 'users' || type === 'all') {
+            const hits = await this.searchService.searchUsers(query, limit, filters);
+            const userResults: UnifiedSearchResult[] = hits.hits.map((h) => ({
+                type: 'user' as const,
+                id: h._id,
+                title: `${h._source.firstName} ${h._source.lastName}`,
+                subtitle: h._source.email,
+                url: `/dashboard/users/${h._id}`,
+            }));
+            results.push(...userResults);
+            total += (hits.total as any).value || 0;
+        }
 
-  async search(
-    query: string,
-    filters?: { department?: string; subsidiary?: string; role?: string },
-    page = 1,
-    limit = 10,
-  ) {
-    const must = [{ multi_match: { query, fields: ['name^3', 'email', 'department'], fuzziness: 'AUTO' } }];
-    const filter = [];
+        // 2. SEARCH MAIL via MailService (Database Query)
+        if (type === 'mail' || type === 'all') {
+            const mails = await this.mailService.searchUserMail(requesterId, query, limit);
+            const mailResults: UnifiedSearchResult[] = mails.map(m => ({
+                type: 'mail' as const,
+                id: m.id,
+                title: m.subject,
+                subtitle: m.body.substring(0, 50) + '...',
+                url: `/dashboard/mail/${m.id}`,
+            }));
+            results.push(...mailResults);
+        }
+        return { results, total };
+    }
 
-    if (filters?.department) filter.push({ term: { department: filters.department } });
-    if (filters?.subsidiary) filter.push({ term: { subsidiary: filters.subsidiary } });
-    if (filters?.role) filter.push({ term: { role: filters.role } });
-
-    const { hits } = await this.es.search<User>({
-      index: this.index,
-      from: (page - 1) * limit,
-      size: limit,
-      query: { bool: { must, filter } },
-      sort: [{ name: { order: 'asc' } }],
-    });
-
-    return {
-      total: hits.total,
-      results: hits.hits.map((h) => ({ id: h._id, ...h._source })),
-    };
-  }
+    async remove(id: string) {
+      // Delegate to the core service to ensure index consistency
+      return this.searchService.deleteUser(id);
+    }
 }

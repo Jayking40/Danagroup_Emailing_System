@@ -25,6 +25,6 @@ import { Attachment } from "../files/entities/attachment.entity";
   ],
   controllers: [MailController],
   providers: [MailService, MailGateway],
-  exports: [MailService],
+  exports: [MailService, TypeOrmModule],
 })
 export class MailModule {}

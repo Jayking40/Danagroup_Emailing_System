@@ -7,7 +7,7 @@ import {
 import { InjectQueue } from "@nestjs/bullmq";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Queue } from "bullmq";
-import { In, Repository, SelectQueryBuilder } from "typeorm";
+import { Brackets, In, Repository, SelectQueryBuilder } from "typeorm";
 import { Attachment } from "../files/entities/attachment.entity";
 import { User } from "../users/entities/user.entity";
 import { MailQueryDto } from "./dto/mail-query.dto";
@@ -115,6 +115,39 @@ export class MailService {
     };
   }
 
+  async searchUserMail(userId: string, query: string, limit = 10) {
+    try {
+      return await this.messageRepo
+        .createQueryBuilder("message")
+        .leftJoin("message.recipients", "recipient")
+        .where("message.is_draft = false")
+        // User is either the sender OR a recipient
+        .andWhere(
+          new Brackets((qb) => {
+            qb.where("message.senderId = :userId", { userId })
+              .orWhere("recipient.recipient_id = :userId", { userId });
+          }),
+        )
+        // The search query matches subject or body
+        .andWhere(
+          new Brackets((qb) => {
+            qb.where("message.subject ILIKE :query", { query: `%${query}%` })
+              .orWhere("message.body ILIKE :query", { query: `%${query}%` });
+          }),
+        )
+        .select([
+          "message.id",
+          "message.subject",
+          "message.body",
+          "message.sentAt"
+        ])
+        .orderBy("message.sentAt", "DESC")
+        .take(limit)
+        .getMany();
+    } catch (error) {
+      this.handleError("searchUserMail", error);
+    }
+  }
 
 
   async getInbox(userId: string, query: MailQueryDto) {

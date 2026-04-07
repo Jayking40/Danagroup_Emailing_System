@@ -6,6 +6,7 @@ import { QueryUserDto } from "./dto/query-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UsersSearchService } from "./users-search.service";
+import { SearchService } from "@modules/search/search.service";
 
 
 interface FindAllParams {
@@ -21,6 +22,7 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    private readonly searchUser: SearchService,
     private readonly usersSearch: UsersSearchService,
   ) {}
 
@@ -106,13 +108,14 @@ export class UsersService {
   ) {
     try {
       // Delegate the complex Elasticsearch logic to the dedicated search service
-      const result = await this.usersSearch.search(query, filters, page, limit);
+      const result = await this.usersSearch.unifiedSearch(query, "users", null, page, limit, filters);
 
       return {
         data: result.results,
         total: result.total,
         page,
-        lastPage: Math.ceil(Number(result.total) / limit),
+        limit,
+        lastPage: Math.ceil(parseInt(result.total.toString()) / limit),
       };
     } catch (error) {
       this.handleError("search", error);
@@ -129,7 +132,7 @@ export class UsersService {
         department: dto.department ? { id: dto.department } : undefined,
       });
       const saved = await this.userRepo.save(newUser);
-      await this.usersSearch.indexUser(saved);
+      await this.searchUser.indexUser(saved);
       return saved;
       
     } catch (error) {
@@ -147,7 +150,7 @@ export class UsersService {
         subsidiary: dto.subsidiary ? { id: dto.subsidiary } : undefined,
         department: dto.department ? { id: dto.department } : undefined,
       });
-      await this.usersSearch.indexUser(updatedUser);
+      await this.searchUser.indexUser(updatedUser);
       return updatedUser;
       
     } catch (error) {
