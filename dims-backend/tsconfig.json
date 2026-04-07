@@ -23,5 +23,6 @@
       "@common/*": ["src/common/*"],
       "@jobs/*": ["src/jobs/*"]
     }
-  }
+  },
+  "include": ["src/**/*"]
 }

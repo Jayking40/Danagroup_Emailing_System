@@ -9,6 +9,7 @@ import Redis from "ioredis";
 import { UserRole } from "@modules/users/entities/user.entity";
 import { Department } from "@modules/departments/entities/department.entity";
 import { Subsidiary } from "@modules/departments/entities/subsidiary.entity";
+import { Request } from "express";
 
 export interface UserShape {
   id: string;
@@ -88,39 +89,57 @@ export class AuthService {
   }
 
 
-  
   // TODO: Implement login(user): Promise<{ accessToken, refreshToken, user }>
   // - Sign JWT access token (payload: { sub: user.id, email, role })
   // - Sign refresh token with longer expiry (JWT_REFRESH_SECRET)
   // - Return both tokens + user object
-  async login(user: UserShape, userAgent?: string, ip?: string) {
+  async login(user: UserShape, userAgent?: string, ip?: string, req?: Request) {
     //Fetch the complete user from the database to get all missing fields
     const fullUser = await this.usersService.findById(user.id);
 
     const tokens = await this.generateTokens(fullUser);
 
     //hash refreshToken before storing
-    const hashedRefresh = await bcrypt.hash(tokens.refreshToken, 12);
+    
 
-    await this.usersService.update(user.id, {
-      sessions: [
-        ...(user.sessions || []),
-        {
-          refreshToken: hashedRefresh,
-          userAgent: userAgent || "unkwown",
-          ip: ip || "unknown"
-        },
-      ],
-    });
+    // Prepare session data
+    const sessionData = {
+      userId: fullUser.id,
+      refreshToken: tokens.refreshToken, // Or hashed if you prefer
+      userAgent: userAgent || "unknown",
+      ip: ip || "unknown",
+      lastActive: new Date().toISOString(),
+      //Store the refresh token (or its hash) to validate it later
+      hashedRefresh: await bcrypt.hash(tokens.refreshToken, 12),
+    };
+
+    if (req?.session) {
+      req.session.user = { id: fullUser.id, email: fullUser.email, role: fullUser.role };
+    }
+
+    // This allows tracking of "Active Devices" and revoke them  
+    // Store in Redis instead of Postgres
+    // Key format: "sess:{userId}:{refreshTokenId}"
+    // TTL matches Refresh Token expiry (e.g., 7 days)
+
+    const sessionKey = `sess:${fullUser.id}:${tokens.refreshToken.slice(-10)}`;
+    await this.redis.set(
+      sessionKey,
+      JSON.stringify(sessionData),
+      'EX', 60 * 60 * 24 * 7 // 7 Days
+    );
 
     return {
       ...tokens,
-      user: fullUser
+      user: {
+        id: fullUser.id,
+        email: fullUser.email,
+        firstName: fullUser.firstName,
+        lastName: fullUser.lastName,
+        role: fullUser.role
+      }
     };
   }
-
-
-
 
   // TODO: Implement refresh(refreshToken): Promise<{ accessToken }>
   // - Verify refresh token with JWT_REFRESH_SECRET
@@ -179,7 +198,7 @@ export class AuthService {
 
   // TODO: Implement logout(): void
   // - Optionally blacklist refresh token in Redis (for full invalidation)
-  async logout(userId: string, accessToken: string, refreshToken: string) {
+  async logout(userId: string, accessToken: string, refreshToken: string, req?: Request) {
     //blacklist access token
     await this.redis.set(
       `bl: ${accessToken}`,
@@ -188,18 +207,31 @@ export class AuthService {
       60 * 15 // 15 mins (access token expiry)
     );
 
-    //remove refresh token
+    req.logout((err) => {
+      if (err) throw err;
+    });
+
+    // Clear express-session (Properly handle the callback)
+    if (req?.session) {
+      await new Promise<void>((resolve, reject) => {
+        req.session.destroy((err) => {
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+    }
+
+    //remove refresh token from DB
     const user = await this.usersService.findById(userId);
 
+    if (user?.sessions) {
     const filteredSessions = [];
-
-    for (const session of user.sessions || []) {
+    for (const session of user.sessions) {
       const match = await bcrypt.compare(refreshToken, session.refreshToken);
       if (!match) {
         filteredSessions.push(session);
       }
     }
-
 
     await this.usersService.update(userId, {
       sessions: filteredSessions,
@@ -208,6 +240,7 @@ export class AuthService {
     return { message: "Logged out successfully"}
 
   }
+}
 
   
 }

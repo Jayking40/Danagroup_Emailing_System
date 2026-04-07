@@ -33,6 +33,10 @@ export class UsersService {
     throw error;
   }
 
+  async updateSessions(id: string, sessions: any[]): Promise<void> {
+    await this.userRepo.update(id, { sessions });
+  }
+
   // TODO: Implement findAll(filters): paginated list of users
   async findAll(query: QueryUserDto) {
     try {
