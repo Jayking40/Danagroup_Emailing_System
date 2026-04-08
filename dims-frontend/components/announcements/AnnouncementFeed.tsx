@@ -39,7 +39,7 @@ export default function AnnouncementFeed({
 
   // Filter and sort announcements
   const filteredAnnouncements = useMemo(() => {
-    let filtered = announcements.filter(announcement => {
+    const filtered = announcements.filter(announcement => {
       const matchSubsidiary = !filters.subsidiary || announcement.subsidiary === filters.subsidiary;
       const matchDepartment = !filters.department || announcement.department === filters.department;
       const matchType = !filters.type || announcement.type === filters.type;
