@@ -3,3 +3,10 @@
 // - Renders ComposeModal in full-page mode
 // - Supports query params: to, subject, threadId (for replies)
 
+export default function Page() {
+  return (
+    <div>
+      compose Page
+    </div>
+  )
+}
