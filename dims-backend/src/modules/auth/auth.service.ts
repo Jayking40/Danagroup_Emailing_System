@@ -4,7 +4,6 @@ import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import * as bcrypt from "bcrypt";
 
-
 import { UsersService } from "../users/users.service";
 import Redis from "ioredis";
 import { UserRole } from "@modules/users/entities/user.entity";
@@ -33,7 +32,6 @@ export interface UserShape {
     userAgent: string;
     ip: string;
   }[];
-  
 }
 @Injectable()
 export class AuthService {
@@ -43,41 +41,37 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly usersService: UsersService,
-
   ) {
     const redisUrl = this.config.get<string>("REDIS_URL");
 
-    console.log('Connecting to Redis with URL:', redisUrl); 
+    console.log("Connecting to Redis with URL:", redisUrl);
 
     if (!redisUrl) {
       // Fallback to local if REDIS_URL is missing
-      this.redis = new Redis('redis://localhost:6379');
+      this.redis = new Redis("redis://localhost:6379");
     } else {
       // Pass the URL string directly
       this.redis = new Redis(redisUrl);
     }
-
   }
 
   // TODO: Implement validateUser(email, password): Promise<User | null>
   // - Find user by email from UsersService
   // - Compare password hash using bcrypt.compare
   // - Return user without password if valid, null otherwise
-  async validateUser (email:string, password:string) {
+  async validateUser(email: string, password: string) {
     const user = await this.usersService.findByEmail(email);
 
     if (!user) return null;
 
-    const isMatch = await bcrypt.compare(password, user.passwordHash)
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) return null;
 
     const { passwordHash: _, ...result } = user;
-    return result
-  };
-  
+    return result;
+  }
 
-
-  private async generateTokens(user:any) {
+  private async generateTokens(user: any) {
     const payload = {
       sub: user.id,
       email: user.email,
@@ -94,9 +88,8 @@ export class AuthService {
       expiresIn: "7d",
     });
 
-    return { accessToken, refreshToken}
+    return { accessToken, refreshToken };
   }
-
 
   // TODO: Implement login(user): Promise<{ accessToken, refreshToken, user }>
   // - Sign JWT access token (payload: { sub: user.id, email, role })
@@ -109,7 +102,6 @@ export class AuthService {
     const tokens = await this.generateTokens(fullUser);
 
     //hash refreshToken before storing
-    
 
     // Prepare session data
     const sessionData = {
@@ -123,10 +115,14 @@ export class AuthService {
     };
 
     if (req?.session) {
-      req.session.user = { id: fullUser.id, email: fullUser.email, role: fullUser.role };
+      req.session.user = {
+        id: fullUser.id,
+        email: fullUser.email,
+        role: fullUser.role,
+      };
     }
 
-    // This allows tracking of "Active Devices" and revoke them  
+    // This allows tracking of "Active Devices" and revoke them
     // Store in Redis instead of Postgres
     // Key format: "sess:{userId}:{refreshTokenId}"
     // TTL matches Refresh Token expiry (e.g., 7 days)
@@ -135,7 +131,8 @@ export class AuthService {
     await this.redis.set(
       sessionKey,
       JSON.stringify(sessionData),
-      'EX', 60 * 60 * 24 * 7 // 7 Days
+      "EX",
+      60 * 60 * 24 * 7, // 7 Days
     );
 
     return {
@@ -145,8 +142,8 @@ export class AuthService {
         email: fullUser.email,
         firstName: fullUser.firstName,
         lastName: fullUser.lastName,
-        role: fullUser.role
-      }
+        role: fullUser.role,
+      },
     };
   }
 
@@ -171,10 +168,10 @@ export class AuthService {
       for (let i = 0; i < user.sessions.length; i++) {
         const match = await bcrypt.compare(
           refreshToken,
-          user.sessions[i].refreshToken
+          user.sessions[i].refreshToken,
         );
 
-          if (match) {
+        if (match) {
           sessionIndex = i;
           break;
         }
@@ -191,29 +188,30 @@ export class AuthService {
 
       user.sessions[sessionIndex].refreshToken = hashedRefresh;
 
-
       await this.usersService.update(user.id, {
         sessions: user.sessions,
       });
 
       return tokens;
-
     } catch {
-      throw  new UnauthorizedException("Invalid refresh token");
+      throw new UnauthorizedException("Invalid refresh token");
     }
   }
 
-
-
   // TODO: Implement logout(): void
   // - Optionally blacklist refresh token in Redis (for full invalidation)
-  async logout(userId: string, accessToken: string, refreshToken: string, req?: Request) {
+  async logout(
+    userId: string,
+    accessToken: string,
+    refreshToken: string,
+    req?: Request,
+  ) {
     //blacklist access token
     await this.redis.set(
       `bl: ${accessToken}`,
       "true",
       "EX",
-      60 * 15 // 15 mins (access token expiry)
+      60 * 15, // 15 mins (access token expiry)
     );
 
     req.logout((err) => {
@@ -234,22 +232,19 @@ export class AuthService {
     const user = await this.usersService.findById(userId);
 
     if (user?.sessions) {
-    const filteredSessions = [];
-    for (const session of user.sessions) {
-      const match = await bcrypt.compare(refreshToken, session.refreshToken);
-      if (!match) {
-        filteredSessions.push(session);
+      const filteredSessions = [];
+      for (const session of user.sessions) {
+        const match = await bcrypt.compare(refreshToken, session.refreshToken);
+        if (!match) {
+          filteredSessions.push(session);
+        }
       }
+
+      await this.usersService.update(userId, {
+        sessions: filteredSessions,
+      });
+
+      return { message: "Logged out successfully" };
     }
-
-    await this.usersService.update(userId, {
-      sessions: filteredSessions,
-    });
-
-    return { message: "Logged out successfully"}
-
   }
-}
-
-  
 }

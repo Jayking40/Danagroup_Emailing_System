@@ -9,8 +9,7 @@ import { UsersSearchService } from "./users-search.service";
 import { SearchService } from "@modules/search/search.service";
 import { Department } from "@modules/departments/entities/department.entity";
 import { Subsidiary } from "@modules/departments/entities/subsidiary.entity";
-import * as bcrypt from 'bcrypt';
-
+import * as bcrypt from "bcrypt";
 
 @Injectable()
 export class UsersService {
@@ -59,12 +58,11 @@ export class UsersService {
       if (subsidiary) where.push({ subsidiary });
       if (role) where.push({ role });
 
-
       const [data, total] = await this.userRepo.findAndCount({
         where: where.length ? where : undefined,
         take: limit,
         skip: (page - 1) * limit,
-        order: { [sortBy  || "firstName"]: 'ASC' },
+        order: { [sortBy || "firstName"]: "ASC" },
       });
       return {
         data,
@@ -75,7 +73,8 @@ export class UsersService {
         },
       };
     } catch (error) {
-      this.handleError("findAll", error);    }
+      this.handleError("findAll", error);
+    }
   }
   // TODO: Implement findById(id): User
   async findById(id: string): Promise<User> {
@@ -102,20 +101,27 @@ export class UsersService {
         "isActive",
         "firstName",
         "lastName",
-      ]
+      ],
     });
   }
   // TODO: Implement search(query): User[] (for RecipientInput autocomplete)
-    // TODO: Implement search(query): User[] (for RecipientInput autocomplete)
+  // TODO: Implement search(query): User[] (for RecipientInput autocomplete)
   async search(
-    query: string, 
+    query: string,
     filters: { department?: string; subsidiary?: string; role?: string },
     page: number = 1,
-    limit: number = 10
+    limit: number = 10,
   ) {
     try {
       // Delegate the complex Elasticsearch logic to the dedicated search service
-      const result = await this.usersSearch.unifiedSearch(query, "users", null, page, limit, filters);
+      const result = await this.usersSearch.unifiedSearch(
+        query,
+        "users",
+        null,
+        page,
+        limit,
+        filters,
+      );
 
       return {
         data: result.results,
@@ -131,19 +137,21 @@ export class UsersService {
 
   // TODO: Implement create(dto): User (admin only)
   async create(dto: CreateUserDto) {
-     // Find the existing department and subsidiary by name
-    const department = await this.departRepo.findOneBy({ name: dto.department });
-    const subsidiary = await this.subsidiaryRepo.findOneBy({ name: dto.subsidiary });
+    // Find the existing department and subsidiary by name
+    const department = await this.departRepo.findOneBy({
+      name: dto.department,
+    });
+    const subsidiary = await this.subsidiaryRepo.findOneBy({
+      name: dto.subsidiary,
+    });
 
     if (!department || !subsidiary) {
-      throw new NotFoundException('Department or Subsidiary not found');
+      throw new NotFoundException("Department or Subsidiary not found");
     }
 
     try {
-
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(dto.password, salt);
-
 
       const newUser = this.userRepo.create({
         ...dto,
@@ -154,11 +162,11 @@ export class UsersService {
       });
       const saved = await this.userRepo.save(newUser);
 
-      // We fetch a fresh copy of the user that includes the full 
+      // We fetch a fresh copy of the user that includes the full
       // Department and Subsidiary objects (so we have the .name property)
       const userWithNames = await this.userRepo.findOne({
         where: { id: saved.id },
-        relations: ['department', 'subsidiary']
+        relations: ["department", "subsidiary"],
       });
 
       // send the version WITH names to Elasticsearch for better search results
@@ -167,7 +175,6 @@ export class UsersService {
       }
 
       return saved;
-      
     } catch (error) {
       this.handleError("create", error);
     }
@@ -177,7 +184,7 @@ export class UsersService {
     try {
       const existingUser = await this.findById(id);
       const updatedUser = await this.userRepo.save({
-        ...existingUser, 
+        ...existingUser,
         ...dto,
         role: dto.role as any,
         subsidiary: dto.subsidiary ? { id: dto.subsidiary } : undefined,
@@ -185,7 +192,6 @@ export class UsersService {
       });
       await this.searchUser.indexUser(updatedUser);
       return updatedUser;
-      
     } catch (error) {
       this.handleError("update", error);
     }
@@ -195,16 +201,18 @@ export class UsersService {
     try {
       const user = await this.findById(id);
 
-      if (!user) throw new NotFoundException('User not found');
+      if (!user) throw new NotFoundException("User not found");
       user.isActive = false;
 
       const updatedUser = await this.userRepo.save(user);
       await this.searchUser.deleteUser(id);
-      
+
       // SYNC TO ES: This updates the 'isActive' flag in the search index
       await this.searchUser.indexUser(updatedUser);
 
-      console.log(`User ${user.firstName} ${user.lastName} deactivated successfully`);
+      console.log(
+        `User ${user.firstName} ${user.lastName} deactivated successfully`,
+      );
     } catch (error) {
       this.handleError("deactivate", error);
     }

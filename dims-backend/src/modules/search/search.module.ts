@@ -12,9 +12,9 @@ import { User } from "@modules/users/entities/user.entity";
       imports: [ConfigModule],
       useFactory: async (config: ConfigService) => ({
         node: config.get("ELASTICSEARCH_NODE", "http://localhost:9200"),
-        auth:{
+        auth: {
           username: config.get("ELASTICSEARCH_USERNAME"),
-          password: config.get("ELASTICSEARCH_PASSWORD" ),
+          password: config.get("ELASTICSEARCH_PASSWORD"),
         },
       }),
       inject: [ConfigService],

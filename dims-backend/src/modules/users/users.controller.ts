@@ -47,15 +47,15 @@ export class UsersController {
   async search(@Query() queryDto: QueryUserDto) {
     // TODO: Implement
 
-    console.log('Search query received:', queryDto);
+    console.log("Search query received:", queryDto);
     return await this.searchService.searchUsers(
-      queryDto.search || '',
-      queryDto.limit, 
+      queryDto.search || "",
+      queryDto.limit,
       {
         department: queryDto.department,
         subsidiary: queryDto.subsidiary,
         role: queryDto.role,
-      }
+      },
     );
   }
 

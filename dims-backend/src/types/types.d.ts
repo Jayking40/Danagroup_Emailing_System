@@ -7,8 +7,6 @@ export interface MessageSearchBody {
   sentAt: Date;
 }
 
-
-
 export interface UserSearchBody {
   firstName: string;
   lastName: string;
