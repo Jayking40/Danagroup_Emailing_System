@@ -15,7 +15,7 @@ import { DepartmentsModule } from "./modules/departments/departments.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { SearchModule } from "./modules/search/search.module";
 import { JobsModule } from "./jobs/jobs.module";
-import { HealthModule } from './health/health.module';
+import { HealthModule } from "./health/health.module";
 
 // Config
 import databaseConfig from "./config/database.config";
@@ -70,10 +70,7 @@ import { JwtAuthGuard } from "@common/guards/jwt-auth.guard";
     ElasticsearchModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        node: config.get<string>(
-          "ELASTICSEARCH_NODE",
-          "http://localhost:9200"
-        ),
+        node: config.get<string>("ELASTICSEARCH_NODE", "http://localhost:9200"),
         maxRetries: 5,
         requestTimeout: 60000,
       }),
@@ -106,14 +103,13 @@ import { JwtAuthGuard } from "@common/guards/jwt-auth.guard";
 
   providers: [
     {
-    provide: APP_GUARD,
-    useClass: JwtAuthGuard,
-  },
-  {
-    provide: APP_GUARD,
-    useClass: RolesGuard,
-  },
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
   ],
-
 })
 export class AppModule {}
