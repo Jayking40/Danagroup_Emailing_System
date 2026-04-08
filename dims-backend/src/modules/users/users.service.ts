@@ -42,22 +42,27 @@ export class UsersService {
   // TODO: Implement findAll(filters): paginated list of users
   async findAll(query: QueryUserDto) {
     try {
-      const { search, department, subsidiary, role, page, limit, sortBy } = query;
+      const page = Number(query.page) || 1;
+      const limit = Number(query.limit) || 10;
+      const { search, department, subsidiary, role, sortBy } = query;
       const where = [];
       if (search) {
         where.push([
-          { name: ILike(`%${search}%`) },
+          { firstName: ILike(`%${search}%`) },
+          { lastName: ILike(`%${search}%`) },
           { email: ILike(`%${search}%`) },
         ]);
       }
       if (department) where.push({ department });
       if (subsidiary) where.push({ subsidiary });
       if (role) where.push({ role });
+
+
       const [data, total] = await this.userRepo.findAndCount({
         where: where.length ? where : undefined,
         take: limit,
         skip: (page - 1) * limit,
-        order: { [sortBy]: 'ASC' },
+        order: { [sortBy  || "firstName"]: 'ASC' },
       });
       return {
         data,

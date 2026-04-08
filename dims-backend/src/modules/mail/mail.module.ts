@@ -10,9 +10,11 @@ import { MessageRecipient } from "./entities/message-recipient.entity";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { User } from "../users/entities/user.entity";
 import { Attachment } from "../files/entities/attachment.entity";
+import { SearchModule } from "@modules/search/search.module";
 
 @Module({
   imports: [
+    SearchModule,
     TypeOrmModule.forFeature([
       Message,
       Thread,

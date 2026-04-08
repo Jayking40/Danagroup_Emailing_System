@@ -18,13 +18,18 @@ import { Roles } from "@common/decorators/roles.decorator";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { QueryUserDto } from "./dto/query-user.dto";
+import { UsersSearchService } from "./users-search.service";
+import { SearchService } from "@modules/search/search.service";
 
 @ApiTags("users")
 @ApiBearerAuth()
 @Controller("users")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly searchService: SearchService,
+  ) {}
 
   // TODO: Implement GET /users — list all active users (paginated)
   // Query: page, limit, subsidiaryId, departmentId, role
@@ -40,13 +45,16 @@ export class UsersController {
   // Query: q (string), limit (default 10)
   @Get("search")
   @ApiOperation({ summary: "Search users by name or email" })
-  async search(@Query("q") q: QueryUserDto) {
+  async search(@Query() queryDto: QueryUserDto) {
     // TODO: Implement
-    return this.usersService.search(q.search ?? "", {
-      department: q.department,
-      subsidiary: q.subsidiary,
-      role: q.role,
-    }, q.page, q.limit);
+    const searchTerm = queryDto.search || ''; 
+
+    console.log('Search query received:', searchTerm);
+    return this.searchService.searchUsers(searchTerm, queryDto.limit, {
+      department: queryDto.department,
+      subsidiary: queryDto.subsidiary,
+      role: queryDto.role,
+    });
   }
 
   // TODO: Implement GET /users/:id — get user by ID

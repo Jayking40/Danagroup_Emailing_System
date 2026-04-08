@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { InjectQueue } from "@nestjs/bullmq";
@@ -18,6 +19,7 @@ import { Message } from "./entities/message.entity";
 import { Thread } from "./entities/thread.entity";
 import { DataSource } from "typeorm";
 import { EntityManager } from "typeorm";
+import { SearchService } from "@modules/search/search.service";
 
 type MailboxResponse<T> = {
   data: T[];
@@ -35,6 +37,9 @@ type RecipientInput = {
 
 @Injectable()
 export class MailService {
+    private readonly logger = new Logger(MailService.name);
+
+
   constructor(
     private readonly dataSource: DataSource,
     @InjectRepository(Message)
@@ -49,6 +54,7 @@ export class MailService {
     private readonly attachmentRepo: Repository<Attachment>,
     @InjectQueue("mail-delivery")
     private readonly mailQueue: Queue,
+    private readonly searchService: SearchService,
   ) {}
 
   private handleError(method: string, error: any) {
@@ -288,7 +294,7 @@ export class MailService {
   async send(dto: SendMailDto, senderId: string) {
     try {
       
-      return this.dataSource.transaction(async (manager) => {
+      const fullMessage = await this.dataSource.transaction(async (manager) => {
 
         const recipients = await this.buildRecipientInputs(dto, true);
         const subject = dto.subject?.trim() ?? "";
@@ -347,13 +353,24 @@ export class MailService {
           where: { id: savedMessage.id },
           relations: { thread: true, sender: true, recipients: { recipient: true }, attachments: true }
         });
+      })
+
+      //Index in Elasticsearch AFTER the transaction is successful
+      if (fullMessage) {
+        try {
+          await this.searchService.indexMessage(fullMessage);
+          this.logger.log(`Message ${fullMessage.id} indexed in ES`);
+        } catch (esError: any) {
+          // We log but don't throw, so the user still gets their success response
+          this.logger.error(`Failed to index message ${fullMessage.id}: ${esError.message}`);
+        }
       }
-   
-    )
+
+        return fullMessage;
     } catch (error) {
       this.handleError("send", error);
     }
-  };
+  }
 
   async saveDraft(dto: SaveDraftDto, senderId: string) {
     try {
@@ -410,7 +427,7 @@ export class MailService {
     } catch (error) {
       this.handleError("saveDraft", error);
     }
-  };
+  }
 
   async readMessage(messageId: string, userId: string) {
     try {

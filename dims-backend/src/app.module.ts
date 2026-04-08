@@ -24,6 +24,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { AuthGuard } from "@nestjs/passport";
 import { RolesGuard } from "@common/guards/roles.guards";
 import { JwtAuthGuard } from "@common/guards/jwt-auth.guard";
+import Redis from "ioredis";
 
 @Module({
   imports: [
@@ -52,9 +53,7 @@ import { JwtAuthGuard } from "@common/guards/jwt-auth.guard";
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         connection: {
-          host: config.get<string>("REDIS_HOST", "localhost"),
-          port: config.get<number>("REDIS_PORT", 6379),
-          password: config.get<string>("REDIS_PASSWORD") || undefined,
+          url: config.get<string>("REDIS_URL"),
         },
         defaultJobOptions: {
           attempts: 3,

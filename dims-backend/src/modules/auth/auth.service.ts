@@ -45,10 +45,18 @@ export class AuthService {
     private readonly usersService: UsersService,
 
   ) {
-    this.redis = new Redis({
-      host: this.config.get("REDIS_HOST") || "redis",
-      port: this.config.get("REDIS_PORT") || 6379,
-    });
+    const redisUrl = this.config.get<string>("REDIS_URL");
+
+    console.log('Connecting to Redis with URL:', redisUrl); 
+
+    if (!redisUrl) {
+      // Fallback to local if REDIS_URL is missing
+      this.redis = new Redis('redis://localhost:6379');
+    } else {
+      // Pass the URL string directly
+      this.redis = new Redis(redisUrl);
+    }
+
   }
 
   // TODO: Implement validateUser(email, password): Promise<User | null>

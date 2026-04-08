@@ -5,18 +5,24 @@ import Redis from 'ioredis';
 import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
+import * as dotenv from "dotenv";
+dotenv.config();
 
 import cookieParser = require('cookie-parser');
 
 async function bootstrap() {
   try {
+
+
     const app = await NestFactory.create(AppModule);
 
     // Initialize ioredis client
-    const redisClient = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT) || 6379,
-    });
+    // const redisClient = new Redis({
+    //   host: process.env.REDIS_HOST || 'localhost',
+    //   port: parseInt(process.env.REDIS_PORT) || 6379,
+    // });
+
+    const redisClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
     app.use(
     session({
@@ -43,6 +49,9 @@ async function bootstrap() {
         whitelist: true,
         forbidNonWhitelisted: true,
         transform: true,
+        transformOptions: {
+          enableImplicitConversion: true, // Helps with converting strings to numbers automatically
+        },
       }),
     );
 

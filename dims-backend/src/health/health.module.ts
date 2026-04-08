@@ -5,9 +5,10 @@ import { HealthController } from './health.controller';
 import { RedisHealthIndicator } from './redis.health';
 import { MinioHealthIndicator } from './minio.health';
 import { ElasticsearchHealthIndicator } from './elasticsearch.health';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
-  imports: [TerminusModule],
+  imports: [ConfigModule, TerminusModule],
   controllers: [HealthController],
   providers: [
     RedisHealthIndicator,
