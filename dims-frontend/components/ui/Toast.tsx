@@ -46,6 +46,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
+<<<<<<< HEAD
     <ToastContext.Provider value={{ showToast }}>
       <RadixToast.Provider swipeDirection="right">
         {children}
@@ -72,3 +73,27 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     </ToastContext.Provider>
   );
 }
+=======
+    <div className=''>
+      <Toaster 
+        toastOptions={{
+          style: {
+          padding: '16px',
+          color: 'white',
+        },
+          success: {
+            style: {
+              background: 'green',
+            },
+          },
+          error: {
+            style: {
+              background: '#e9212e ',
+            },
+          },
+        }}
+      />
+    </div>
+  )
+}
+>>>>>>> 8045b4cf3581f0a6ff75922a130e940434e330cf
