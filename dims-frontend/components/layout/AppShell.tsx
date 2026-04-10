@@ -9,6 +9,7 @@ import ComposeModal from '@/components/mail/ComposeModal';
 import { useSocket } from '@/hooks/useSocket';
 import { queryClient } from '@/lib/queryClient';
 import { useAuthStore } from '@/store/authStore';
+import MailList from '../mail/MailList';
 
 export default function AppShell({
   children,
@@ -52,7 +53,9 @@ export default function AppShell({
         <Sidebar />
         <div className="ml-[var(--sidebar-width)] flex min-h-screen flex-col">
           <TopBar />
-          <main className="flex-1 overflow-y-auto">{children}</main>
+          <main className="flex-1 overflow-y-auto">
+            {children}
+            </main>
         </div>
         <ComposeModal />
       </div>
