@@ -10,56 +10,54 @@
 // - Forward action on the last message
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMail } from "@/hooks/useMail";
+import { Message } from "@/types/mail.types";
 import MailMessage from "./MailMessage";
-import Spinner from "@/components/ui/Spinner";
+
+// Inside MailThread.tsx
 
 export default function MailThread({ threadId }: { threadId: string }) {
-  const [threadData, setThreadData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { useThread } = useMail();
+  const { data: threadData, isLoading, error } = useThread(threadId);
 
-  useEffect(() => {
-    async function loadThread() {
-      setLoading(true);
-      try {
-        // Fetches all messages in the thread
-        const response = await fetch(`/api/mail/thread/${threadId}`);
-        if (!response.ok) {
-          // Handle 404 or other errors
-          console.error("Thread not found");
-        }
-        const data = await response.json();
-        setThreadData(data);
-      } catch (error) {
-        console.error("Failed to load email thread:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
+  if (isLoading) return <div className="p-8 text-center">Loading conversation...</div>;
+  if (error || !threadData) return <div className="p-8 text-center text-destructive">Error loading thread.</div>;
 
-    if (threadId) loadThread();
-  }, [threadId]);
+  // 1. Correctly extract messages from the response
+  const messages = threadData.messages || [];
+  
+  // 2. Extract the subject from the first message's thread object
+  const subject = messages[0]?.subject || "No Subject";
 
-  if (loading) return <div className="flex h-full items-center justify-center"><Spinner size="lg" /></div>;
-  if (!threadData) return <div className="p-8 text-center text-muted-foreground">Thread not found.</div>;
+  console.log(messages)
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-white">
-      {/* Header Area */}
-      <div className="p-6 border-b shrink-0">
-        <h1 className="text-xl font-bold">{threadData.subject}</h1>
-      </div>
+    <div className="flex h-full flex-col overflow-y-auto bg-slate-50/30 p-4 lg:p-8">
+      <div className="mx-auto w-full max-w-4xl space-y-6">
+        
+        {/* Thread Header */}
+        <div className="mb-8 border-b pb-6">
+          <h1 className="text-2xl font-bold text-foreground">{subject}</h1>
+        </div>
 
-      {/* Scrollable Message List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {threadData.messages.map((msg: any, index: number) => (
-          <MailMessage 
-            key={msg.id} 
-            message={msg} 
-            // Expand the last (most recent) message by default
-            isCollapsed={index !== threadData.messages.length - 1} 
-          />
-        ))}
+        {/* Message List */}
+        <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+          {messages.map((msg: any, index: number) => (
+            <MailMessage 
+              key={msg.id} 
+              // Map your API data to the props expected by MailMessage
+              message={{
+                ...msg,
+                senderName: `${msg.sender?.firstName} ${msg.sender?.lastName}`,
+                senderEmail: msg.sender?.email,
+                body: msg.bodyHtml || msg.body, // Prioritize HTML
+                unread: msg.isRead === false, // Note the naming difference
+              }}
+              // Automatically collapse all but the last message
+              isCollapsed={index !== messages.length - 1} 
+            />
+          ))}
+        </div>
       </div>
     </div>
   );

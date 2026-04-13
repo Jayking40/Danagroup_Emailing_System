@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -112,7 +113,7 @@ export class MailController {
     summary: "Mark all messages in a thread as read and return thread details",
   })
   readThread(
-    @Param("threadId") threadId: string,
+    @Param("threadId", new ParseUUIDPipe()) threadId: string,
     @CurrentUser() user: { userId: string },
   ) {
     return this.mailService.readThread(threadId, user.userId);

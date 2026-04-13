@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { Reply, Forward, Star, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
+import { useMail } from "@/hooks/useMail";
+
 
 // TODO: Implement MailMessage Component
 // Props: message: Message, isCollapsed?: boolean
@@ -42,12 +44,14 @@ export default function MailMessage({
   message: Message; 
   isCollapsed?: boolean 
 }) {
+  const { useMarkRead } = useMail();
+  const markRead = useMarkRead(message.id);
   const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
 
   // Marks message as read on expand (PATCH /api/mail/:id/read)
   useEffect(() => {
-    if (!isCollapsed && message.unread) {
-      fetch(`/api/mail/${message.id}/read`, { method: "PATCH" }).catch(console.error);
+    if (!isCollapsed && message.unread && message.id && message.id !== "undefined") {
+      markRead.mutate();
     }
   }, [isCollapsed, message.id, message.unread]);
 
