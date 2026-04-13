@@ -30,7 +30,7 @@ export class MailController {
     @CurrentUser() user: { userId: string },
     @Query() query: MailQueryDto,
   ) {
-    return this.mailService.getInbox(user.userId, query);
+    return this.mailService.getFolder(user.userId, 'inbox', query);
   }
 
   @Get("sent")
@@ -39,7 +39,7 @@ export class MailController {
     @CurrentUser() user: { userId: string },
     @Query() query: MailQueryDto,
   ) {
-    return this.mailService.getSent(user.userId, query);
+    return this.mailService.getFolder(user.userId, 'sent', query);
   }
 
   @Get("drafts")
@@ -154,7 +154,7 @@ export class MailController {
     @CurrentUser() user: { userId: string },
     @Query() query: MailQueryDto,
   ) {
-    return this.mailService.getTrash(user.userId, query);
+    return this.mailService.getFolder(user.userId, 'trash', query);
   }
 
   @Patch(":id/restore")

@@ -1,3 +1,4 @@
+import { number } from "zod";
 import type { User } from "./user.types";
 
 export type RecipientType = "to" | "cc" | "bcc";
@@ -41,15 +42,24 @@ export interface Message {
   threadId: string;
   thread?: Thread;
   senderId: string;
-  sender?: User;
+  sender: User;
   subject: string;
   body: string;
   bodyHtml?: string;
   isDraft: boolean;
   sentAt?: string;
   createdAt: string;
-  recipients?: MessageRecipient[];
+  recipients: MessageRecipient[];
   attachments?: Attachment[];
+  latestMessage: Message;
+}
+
+export interface InboxMessage {
+  id: string;
+  subject: string;
+  latestMessage: Message;
+  unreadCount?: number;
+  message?: Message;
 }
 
 export interface ComposeData {
@@ -82,3 +92,12 @@ export interface Announcement {
 export type MailFolder = 'inbox' | 'sent' | 'drafts' | 'starred' | 'spam' | 'trash' | 'all';
 
 export type MailLabel = 'important' | 'work' | 'personal';
+
+
+export interface MailListItem {
+  id: string; // Thread ID
+  subject: string;
+  unreadCount: number;
+  updatedAt: string;
+  latestMessage: Message; // The full message object with sender, body, etc.
+}

@@ -75,6 +75,7 @@ export class MailService {
     // 1. Get Total Count
     const totalResult = await baseQuery
       .clone()
+      .orderBy()
       .select("COUNT(DISTINCT thread.id)", "count")
       .getRawOne<{ count: string }>();
 
@@ -122,7 +123,7 @@ export class MailService {
       })),
       total,
       page,
-      lastPage: Math.ceil(total / limit) || 1,
+      lastPage: total === 0 ? 1 : Math.ceil(total / limit),
     };
   }
 
@@ -221,7 +222,7 @@ export class MailService {
         data,
         total,
         page,
-        lastPage: Math.ceil(total / limit) || 1,
+        lastPage: total === 0 ? 1 : Math.ceil(total / limit),
       };
     } catch (error) {
       this.handleError("getSent", error);
@@ -259,7 +260,7 @@ export class MailService {
         data,
         total,
         page,
-        lastPage: Math.ceil(total / limit) || 1,
+        lastPage: total === 0 ? 1 : Math.ceil(total / limit),
       };
     } catch (error) {
       this.handleError("getDrafts", error);
@@ -286,15 +287,52 @@ export class MailService {
       });
 
       return {
-        threadId,
-        messages: messages.filter((message) =>
-          this.isMessageVisibleToUser(message, userId),
-        ),
+        data: {
+          threadId,
+          messages: messages.filter((message) =>
+            this.isMessageVisibleToUser(message, userId),
+          ),
+        }
       };
     } catch (error) {
       this.handleError("getThread", error);
     }
   }
+
+  async getFolder(userId: string, folder: string, query: MailQueryDto) {
+    const { page, limit } = this.normalizePagination(query);
+
+    const baseQuery = this.threadRepo
+      .createQueryBuilder("thread")
+      .innerJoinAndSelect("thread.messages", "message")
+      .leftJoinAndSelect("message.sender", "sender")
+      .innerJoin("message.recipients", "recipient")
+      // Ensure we are only looking at messages for THIS user
+      .where("recipient.recipient_id = :userId", { userId });
+
+    // Add specific folder filters
+    if (folder === 'inbox') {
+    baseQuery.andWhere("recipient.is_deleted = false");
+    }
+
+    if (folder === 'sent') {
+      baseQuery.andWhere("message.senderId = :userId", { userId });
+    }
+
+    if (folder === 'trash') {
+      baseQuery.andWhere("recipient.is_deleted = true");
+    }
+
+    if (folder === 'drafts') {
+      baseQuery.andWhere("message.is_draft = true");
+    }
+
+    baseQuery.orderBy("thread.updatedAt", "DESC");
+
+    return this.paginateThreads(baseQuery, userId, page, limit);
+  }
+
+
 
   async send(dto: SendMailDto, senderId: string) {
     try {
@@ -461,7 +499,7 @@ export class MailService {
           { userId },
         )
         .where("message.id = :messageId", { messageId })
-        .andWhere(`(message.sender_id = :userId OR recipient.id IS NOT NULL)`, {
+        .andWhere(`(message.senderId= :userId OR recipient.id IS NOT NULL)`, {
           userId,
         })
         .getOne();
@@ -488,7 +526,9 @@ export class MailService {
       // mark as read
       await this.markRead(messageId, userId, true);
 
-      return message;
+      return {
+        data: message
+      };
     } catch (error) {
       this.handleError("readMessage", error);
     }
@@ -522,9 +562,11 @@ export class MailService {
       await this.recipientRepo.save(recipient);
 
       return {
-        messageId,
-        isRead: recipient.is_read,
-        readAt: recipient.read_at,
+        data:{
+          messageId,
+          isRead: recipient.is_read,
+          readAt: recipient.read_at,
+        }
       };
     } catch (error) {
       this.handleError("markRead", error);
@@ -547,8 +589,10 @@ export class MailService {
         .execute();
 
       return {
-        messageIds,
-        isRead: true,
+        data:{
+          messageIds,
+          isRead: true,
+        }
       };
     } catch (error) {
       this.handleError("markManyAsRead", error);
@@ -578,7 +622,12 @@ export class MailService {
         )
         .execute();
 
-      return { threadId, isRead: true };
+      return {
+        data: {
+          threadId, 
+          isRead: true 
+        }
+      };
     } catch (error) {
       this.handleError("markThreadAsRead", error);
     }
@@ -606,10 +655,12 @@ export class MailService {
       await this.markThreadAsRead(threadId, userId);
 
       return {
-        threadId,
-        messages: messages.filter((m) =>
-          this.isMessageVisibleToUser(m, userId),
-        ),
+        data: {
+          threadId,
+          messages: messages.filter((m) =>
+            this.isMessageVisibleToUser(m, userId),
+          ),
+        }
       };
     } catch (error) {
       this.handleError("readThread", error);
@@ -633,8 +684,10 @@ export class MailService {
       await this.recipientRepo.save(recipient);
 
       return {
-        messageId,
-        isStarred: recipient.is_starred,
+        data: {
+          messageId,
+          isStarred: recipient.is_starred,
+        }
       };
     } catch (error) {
       this.handleError("toggleStar", error);
@@ -680,8 +733,10 @@ export class MailService {
       }
 
       return {
-        messageId,
-        status: "moved_to_trash",
+        data: {
+          messageId,
+          status: "moved_to_trash",
+        }
       };
     } catch (error) {
       this.handleError("moveToTrash", error);
@@ -745,8 +800,10 @@ export class MailService {
       }
 
       return {
-        messageId,
-        restored: true,
+        data:{
+          messageId,
+          restored: true,
+        }
       };
     } catch (error) {
       this.handleError("restoreFromTrash", error);
@@ -779,7 +836,11 @@ export class MailService {
       );
       if (recipient && recipient.is_deleted) {
         await this.recipientRepo.remove(recipient);
-        return { messageId, status: "permanently_deleted_by_recipient" };
+        return { data:{
+          messageId, 
+          status: "permanently_deleted_by_recipient" 
+        }
+      };
       }
 
       throw new BadRequestException(
@@ -809,8 +870,10 @@ export class MailService {
         .execute();
 
       return {
-        success: true,
-        count: result.affected,
+        data: {
+          success: true,
+          count: result.affected,
+        }
       };
     } catch (error) {
       this.handleError("emptyAllTrash", error);
@@ -825,37 +888,36 @@ export class MailService {
   }
 
   private async getLatestMessagesByThread(threadIds: string[], userId: string) {
-    const messages = await this.messageRepo.find({
-      where: {
-        threadId: In(threadIds),
-        is_draft: false,
-      },
-      relations: {
-        sender: true,
-        recipients: {
-          recipient: true,
-        },
-        attachments: true,
-      },
-      order: {
-        createdAt: "DESC",
-      },
-    });
+    if (!threadIds.length) return [];
 
-    const seen = new Set<string>();
-    return messages.filter((message) => {
-      if (seen.has(message.threadId)) {
-        return false;
-      }
+    // Use snake_case for the alias to prevent PostgreSQL case-sensitivity issues
+    const subQuery = this.messageRepo
+      .createQueryBuilder("m")
+      .select("MAX(m.created_at)", "max_created_at") // explicitly use database column name and simple alias
+      .addSelect("m.thread_id", "thread_id")
+      .where("m.thread_id IN (:...threadIds)", { threadIds })
+      .andWhere("m.is_draft = false")
+      .groupBy("m.thread_id");
 
-      if (!this.isMessageVisibleToUser(message, userId)) {
-        return false;
-      }
+    const latestMessages = await this.messageRepo
+      .createQueryBuilder("message")
+      .innerJoin(
+        `(${subQuery.getQuery()})`,
+        "latest",
+        // Reference the snake_case alias here
+        "latest.thread_id = message.thread_id AND latest.max_created_at = message.created_at"
+      )
+      .leftJoinAndSelect("message.sender", "sender")
+      .leftJoinAndSelect("message.recipients", "recipients")
+      .leftJoinAndSelect("message.attachments", "attachments")
+      .setParameters(subQuery.getParameters())
+      .getMany();
 
-      seen.add(message.threadId);
-      return true;
-    });
+    return latestMessages.filter((m) =>
+      this.isMessageVisibleToUser(m, userId),
+    );
   }
+
 
   private async resolveThread(
     manager: EntityManager,

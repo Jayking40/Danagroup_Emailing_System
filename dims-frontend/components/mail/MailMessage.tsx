@@ -5,6 +5,10 @@ import { format } from "date-fns";
 import { Reply, Forward, Star, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
 import { useMail } from "@/hooks/useMail";
+import { InboxMessage, Message } from "@/types/mail.types";
+
+import { useAuthStore } from "@/store/authStore";
+import { htmlToText } from "@/lib/utils";
 
 
 // TODO: Implement MailMessage Component
@@ -24,38 +28,36 @@ interface Attachment {
   url: string;
 }
 
-interface Message {
-  id: string;
-  senderName: string;
-  senderEmail: string;
-  subject: string;
-  snippet: string;
-  body: string;
-  createdAt: string;
-  unread: boolean;
-  starred: boolean;
-  attachments?: Attachment[];
-}
-
 export default function MailMessage({ 
   message, 
-  isCollapsed: initialCollapsed = false 
+  isCollapsed: initialCollapsed = false,
+  isConsecutive = false,
 }: { 
   message: Message; 
-  isCollapsed?: boolean 
+  isCollapsed?: boolean
+  isConsecutive?: boolean
 }) {
+  const { user } = useAuthStore();
   const { useMarkRead } = useMail();
-  const markRead = useMarkRead(message.id);
+  const markRead = useMarkRead(message.id); 
   const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
 
   // Marks message as read on expand (PATCH /api/mail/:id/read)
   useEffect(() => {
-    if (!isCollapsed && message.unread && message.id && message.id !== "undefined") {
+    const myRecipient = message.recipients.find(
+      (r) => r.recipientId === user?.id
+    );
+    if (!isCollapsed && myRecipient && myRecipient.isRead === false && message.id !== "undefined") {
       markRead.mutate();
     }
-  }, [isCollapsed, message.id, message.unread]);
+  }, [isCollapsed, message.id]);
 
-  const sanitizedBody = DOMPurify.sanitize(message.body);
+  const sanitizedBody = DOMPurify.sanitize(message.bodyHtml || message.body);
+  const myRecipient = message.recipients.find(
+    (r) => r.recipientId === user?.id
+  );
+
+  const fullName = message.sender.firstName + " " + message.sender.lastName
 
   return (
     <div className={`group border-b border-border bg-background transition-all ${!isCollapsed ? "pb-6" : ""}`}>
@@ -68,12 +70,12 @@ export default function MailMessage({
           {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           
           <div className="flex flex-col min-w-0">
-            <span className={`truncate text-sm ${message.unread ? "font-bold" : "font-medium"}`}>
-              {message.senderName}
+            <span className={`truncate text-sm ${myRecipient?.isRead === false ? "font-bold" : "font-medium"}`}>
+              {fullName}
             </span>
             {isCollapsed && (
               <span className="truncate text-xs text-muted-foreground">
-                {message.snippet}
+                {htmlToText(message.bodyHtml) || message.body}
               </span>
             )}
           </div>
@@ -90,8 +92,8 @@ export default function MailMessage({
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button className="p-1.5 hover:bg-muted rounded" title="Reply"><Reply className="h-4 w-4" /></button>
             <button className="p-1.5 hover:bg-muted rounded" title="Forward"><Forward className="h-4 w-4" /></button>
-            <button className={`p-1.5 hover:bg-muted rounded ${message.starred ? "text-amber-400" : ""}`} title="Star">
-              <Star className={`h-4 w-4 ${message.starred ? "fill-current" : ""}`} />
+            <button className={`p-1.5 hover:bg-muted rounded ${myRecipient?.isStarred === true ? "text-amber-400" : ""}`} title="Star">
+              <Star className={`h-4 w-4 ${myRecipient?.isStarred === true ? "fill-current" : ""}`} />
             </button>
             <button className="p-1.5 hover:bg-muted rounded text-destructive" title="Delete"><Trash2 className="h-4 w-4" /></button>
           </div>
@@ -102,7 +104,7 @@ export default function MailMessage({
       {!isCollapsed && (
         <div className="px-11 animate-in fade-in slide-in-from-top-1 duration-200">
           <div className="mb-6 flex flex-col text-xs text-muted-foreground">
-            <span>From: <b className="text-foreground">{message.senderName}</b> &lt;{message.senderEmail}&gt;</span>
+            <span>From: <b className="text-foreground">{fullName}</b> &lt;{message.sender.email}&gt;</span>
             <span>Date: {format(new Date(message.createdAt), "PPPP 'at' p")}</span>
           </div>
 
@@ -119,8 +121,8 @@ export default function MailMessage({
               <div className="flex flex-wrap gap-2">
                 {message.attachments.map((file) => (
                   <div key={file.id} className="flex items-center gap-2 rounded-md border p-2 text-xs hover:bg-muted cursor-pointer">
-                    <span className="font-medium truncate max-w-[150px]">{file.name}</span>
-                    <span className="text-muted-foreground">({(file.size / 1024).toFixed(1)} KB)</span>
+                    <span className="font-medium truncate max-w-[150px]">{file.filename}</span>
+                    <span className="text-muted-foreground">({(file.sizeBytes / 1024).toFixed(1)} KB)</span>
                   </div>
                 ))}
               </div>

@@ -11,7 +11,6 @@
 "use client";
 
 import { useMail } from "@/hooks/useMail";
-import { Message } from "@/types/mail.types";
 import MailMessage from "./MailMessage";
 
 // Inside MailThread.tsx
@@ -29,7 +28,7 @@ export default function MailThread({ threadId }: { threadId: string }) {
   // 2. Extract the subject from the first message's thread object
   const subject = messages[0]?.subject || "No Subject";
 
-  console.log(messages)
+  // console.log(messages)
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-slate-50/30 p-4 lg:p-8">
@@ -42,21 +41,22 @@ export default function MailThread({ threadId }: { threadId: string }) {
 
         {/* Message List */}
         <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
-          {messages.map((msg: any, index: number) => (
+          {messages.map((message, index:number) => {
+            const isConsecutive = index > 0 && messages[index - 1].senderId === message.senderId;
+            console.log(message);
+
+            return(
             <MailMessage 
-              key={msg.id} 
+              key={message.id} 
               // Map your API data to the props expected by MailMessage
-              message={{
-                ...msg,
-                senderName: `${msg.sender?.firstName} ${msg.sender?.lastName}`,
-                senderEmail: msg.sender?.email,
-                body: msg.bodyHtml || msg.body, // Prioritize HTML
-                unread: msg.isRead === false, // Note the naming difference
-              }}
+              message={message}
+              isConsecutive={isConsecutive}
+
               // Automatically collapse all but the last message
               isCollapsed={index !== messages.length - 1} 
             />
-          ))}
+          )}
+        )}
         </div>
       </div>
     </div>

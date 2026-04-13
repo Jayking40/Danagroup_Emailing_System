@@ -24,13 +24,7 @@ type ApiEnvelope<T> = T | { data: T };
 const MAIL_STALE_TIME = 30_000;
 
 function unwrapResponse<T>(payload: any): T {
-  if (payload?.data?.data) {
-    return {
-      ...payload.data,
-      items: payload.data.data // Map the array to 'items' for consistency
-    } as T;
-  }
-  return payload.data
+  return payload?.data ?? payload;
 }
 
 /** 
@@ -40,10 +34,10 @@ async function getMailPage(
   folder: "inbox" | "sent" | "drafts" | "trash",
   page = 1,
 ): Promise<PaginatedResponse<Thread>> {
-  const response = await api.get<ApiEnvelope<PaginatedResponse<Thread>>>(
-    `/mail/${folder}`,
-    { params: { page } }
-  );
+  const response = await api.get(`/mail/${folder}`, {
+    params: { page }
+  });
+
   return unwrapResponse(response.data);
 }
 
@@ -96,11 +90,9 @@ export function useMail() {
 
       const res = await api.get(`/mail/threads/${threadId}`);
 
-      const result = res.data?.data || res.data;
+      if (!res) throw new Error("No data returned from server");
 
-      if (!result) throw new Error("No data returned from server");
-
-      return result;
+      return res.data.data;
     },
     enabled: !!threadId,
   }),

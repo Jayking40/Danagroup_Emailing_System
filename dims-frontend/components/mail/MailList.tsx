@@ -6,7 +6,8 @@ import { Archive, MailOpen, Trash2, Loader2 } from "lucide-react";
 import { useRouter, useParams } from "next/navigation";
 import { useMail } from "@/hooks/useMail"; // Path to your hook
 import { useMailStore } from "@/store/mailStore"; // Path to your store
-import type { MailFolder, Message } from "@/types/mail.types";
+import type { InboxMessage, MailFolder, Message } from "@/types/mail.types";
+import { htmlToText } from "@/lib/utils";
 
 type MailFilter = "all" | "unread" | "starred";
 
@@ -44,7 +45,10 @@ export default function MailList({ viewMode, searchParams }: MailListProps) {
   const { data, isLoading } = folderHooks[viewMode as keyof typeof folderHooks](page);
   const deleteMail = mailApi.useDeleteMail(""); // We'll pass IDs dynamically
 
-  // 3. Filtering Logic
+
+
+
+  // Filtering Logic
   const threads = useMemo(() => {
   // Check if data.data exists (the array), otherwise check if data is the array
   if (Array.isArray(data)) return data;
@@ -69,6 +73,7 @@ export default function MailList({ viewMode, searchParams }: MailListProps) {
       </div>
     );
   }
+
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-white">
@@ -102,14 +107,16 @@ export default function MailList({ viewMode, searchParams }: MailListProps) {
       </div>
 
       {/* List Area */}
-      <div className="flex-1 overflow-y-auto bg-green-400">
+      <div className="flex-1 overflow-y-auto">
         {threads.length > 0 ? (
-          threads.map((message:Message) => (
+          threads.map((message:InboxMessage) => {
+            console.log(message);
+            return(
             <button
               key={message.id} // Keep message.id as the React key
               onClick={() => {
                 // Use threadId if available, fallback to id
-                const idToUse = message.threadId || message.id; 
+                const idToUse = message.latestMessage.threadId; 
 
                 if (idToUse) {
                   router.push(`/mail/${viewMode}/${idToUse}`);
@@ -119,34 +126,38 @@ export default function MailList({ viewMode, searchParams }: MailListProps) {
               }}
               className={`mail-list-item w-full flex items-start text-left p-4 border-b hover:bg-slate-50 transition-colors ${
                 //needs change
-                message.thread ? "bg-slate-50/50 border-l-4 border-l-dana-blue" : ""
-              } ${currentThreadId === message.threadId ? "bg-slate-100" : ""}`}
+                message.latestMessage.thread ? "bg-slate-50/50 border-l-4 border-l-dana-blue" : ""
+              } ${currentThreadId === message.subject ? "bg-slate-100" : ""}`}
             >
-              <div className="flex items-center gap-3 pr-2">
+              <div className="">
                 <input
                   type="checkbox"
-                  checked={selectedMessageIds.includes(message.threadId)}
-                  onChange={() => toggleMessageSelection(message.threadId)}
+                  checked={selectedMessageIds.includes(message.latestMessage.threadId)}
+                  onChange={() => toggleMessageSelection(message.latestMessage.threadId)}
                   onClick={(e) => e.stopPropagation()}
                   className="h-4 w-4 rounded"
                 />
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between">
-                  <span className="truncate text-sm font-semibold">{message.sender?.firstName} {message.sender?.lastName}</span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {message.createdAt ? (
-                      formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })
-                    ) : (
-                      "No date"
-                    )}
-                   </span>
+              <div className="h-16 mx-auto flex items-center gap-2 overflow-hidden">
+                <div className="min-w-12 min-h-12 rounded-full flex justify-center items-center bg-pink-600"></div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="truncate text-sm font-semibold ">{message.latestMessage.sender?.firstName} {message.latestMessage.sender?.lastName}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {message.latestMessage.createdAt ? (
+                        formatDistanceToNow(new Date(message.latestMessage.createdAt), { addSuffix: true })
+                      ) : (
+                        "No date"
+                      )}
+                    </div>
+                  </div>
+                  <p className="truncate text-sm font-medium">{message.subject}</p>
+                  <p className="truncate text-xs text-muted-foreground">{htmlToText(message.latestMessage.bodyHtml) || message.latestMessage.body}</p>
                 </div>
-                <p className="truncate text-sm font-medium">{message.subject}</p>
-                <p className="truncate text-xs text-muted-foreground">{message.bodyHtml || message.body}</p>
               </div>
             </button>
-          ))
+          )
+        })
         ) : (
           <EmptyState />
         )}
