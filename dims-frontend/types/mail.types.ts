@@ -62,6 +62,28 @@ export interface InboxMessage {
   message?: Message;
 }
 
+// export interface ComposeData {
+//   subject: string;
+//   body: string;
+//   bodyHtml?: string;
+//   attachmentIds?: string[];
+//   threadId?: string;
+//   draftId?: string;
+//   isDraft?: boolean;
+//   recipients: {
+//     email: string;
+//     type: 'to' | 'cc' | 'bcc';
+//   } [];
+// }
+
+export interface ComposeFormState {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  body: string;
+}
+
 export interface ComposeData {
   subject: string;
   body: string;
@@ -70,11 +92,19 @@ export interface ComposeData {
   threadId?: string;
   draftId?: string;
   isDraft?: boolean;
+  // Updated from recipient_id (UUID) to email (string)
+  // State-helper fields (optional)
+  to?: string[]; 
+  cc?: string[]; 
+  bcc?: string[];
+  // Final payload field
   recipients: {
-    recipient_id: string;
+    email: string;
     type: 'to' | 'cc' | 'bcc';
-  } [];
+  }[];
 }
+
+
 
 export interface Announcement {
   id: string;
