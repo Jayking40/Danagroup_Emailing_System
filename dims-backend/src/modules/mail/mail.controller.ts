@@ -63,11 +63,10 @@ export class MailController {
   @Post("send")
   @ApiOperation({ summary: "Send a new message or send an existing draft" })
   async send(
-    @CurrentUser() user: { userId: string },
+    @CurrentUser() user: { userId: string; email: string; },
     @Body() dto: SendMailDto,
-    @Req() req,
   ) {
-    return this.mailService.send(dto, user.userId);
+    return this.mailService.send(dto, user.email);
   }
 
   @Post("draft")

@@ -12,7 +12,10 @@ import cookieParser = require("cookie-parser");
 
 async function bootstrap() {
   try {
-    const app = await NestFactory.create(AppModule);
+    const app = await NestFactory.create(AppModule, {
+    abortOnError: true, // This will force the app to crash and show the error
+    logger: ['error', 'warn', 'log', 'debug'], // Enable debug logs
+  });
 
     // Initialize ioredis client
     // const redisClient = new Redis({

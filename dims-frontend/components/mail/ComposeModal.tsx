@@ -8,7 +8,7 @@ import { useMail } from '@/hooks/useMail'; // Adjust path to where your useMail 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import Input, { ComposeInput } from "../ui/Input";
+import { ComposeInput } from "../ui/Input";
 
 // TODO: Implement ComposeModal Component
 // - Floating compose modal (Gmail-style, bottom-right)
@@ -67,26 +67,28 @@ export default function ComposeModal() {
     // At this point, Zod has already transformed strings to arrays
     const validatedData = data as ComposeFormValues; 
 
-    const recipientList = [
-      ...validatedData.to.map(email => ({ email, type: 'to' as const })),
-      ...(validatedData.cc || []).map(email => ({ email, type: 'cc' as const })),
-      ...(validatedData.bcc || []).map(email => ({ email, type: 'bcc' as const })),
-    ];
-
-    sendEmail({
-      recipients: recipientList,
+    const payload = {
+      toEmails: validatedData.to,
+      ccEmails: validatedData.cc.length > 0 ? validatedData.cc : undefined,
+      bccEmails: validatedData.bcc.length > 0 ? validatedData.bcc : undefined,
       subject: validatedData.subject,
       body: validatedData.body,
       bodyHtml: `<p>${validatedData.body.replace(/\n/g, '<br>')}</p>`,
-      isDraft: false,
-    }, {
+      // threadId and draftId can be added here if in reply/draft mode
+    };
+
+    sendEmail(payload, {
       onSuccess: () => {
         toast.success('Message sent!');
         reset();
         closeCompose();
       },
-      onError: (err: any) => toast.error(err.response?.data?.message || 'Failed to send'),
+      onError: (err: any) => {
+        const errorMessage = err.response?.data?.message || 'Failed to send';
+        toast.error(Array.isArray(errorMessage) ? errorMessage[0] : errorMessage);
+      },
     });
+
   };
 
 
@@ -107,7 +109,7 @@ export default function ComposeModal() {
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-1 flex-col py-16 z-[100] bg-dana-red-200/90 maxh-[70vh] max-w-[60vw] rounded-lg">
           <div className="px-4 gap-4 flex flex-col">
             <ComposeInput
-              register = {register("to")}
+              {...register("to")}
               type="text"
               label="to"
               placeholder="To (comma separated)"
@@ -116,7 +118,7 @@ export default function ComposeModal() {
 
             <ComposeInput
               type="text"
-              register = {register("cc")}
+              {...register("cc")}
               placeholder="CC"
               label="cc"
               errors={errors.cc}
@@ -126,7 +128,7 @@ export default function ComposeModal() {
             <ComposeInput
               type="text"
               label="bcc"
-              register = {register("bcc")}
+              {...register("bcc")}
               placeholder="BCC"
               errors={errors.bcc}
 
@@ -136,7 +138,7 @@ export default function ComposeModal() {
             <ComposeInput
               type="text"
               label="subject"
-              register = {register("subject")}
+              {...register("subject")} 
               placeholder="Subject"
               errors={errors.subject}
             />

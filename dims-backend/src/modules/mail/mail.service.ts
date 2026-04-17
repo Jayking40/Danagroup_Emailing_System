@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -23,6 +25,7 @@ import { Thread } from "./entities/thread.entity";
 import { DataSource } from "typeorm";
 import { EntityManager } from "typeorm";
 import { SearchService } from "@modules/search/search.service";
+import { UsersService } from "@modules/users/users.service";
 
 type MailboxResponse<T> = {
   data: T[];
@@ -55,6 +58,8 @@ export class MailService {
     @InjectQueue("mail-delivery")
     private readonly mailQueue: Queue,
     private readonly searchService: SearchService,
+    @Inject(forwardRef(() => UsersService))
+    private readonly userService: UsersService,
   ) {}
 
   private handleError(method: string, error: any) {
@@ -334,8 +339,13 @@ export class MailService {
 
 
 
-  async send(dto: SendMailDto, senderId: string) {
+  async send(dto: SendMailDto, senderEmail: string) {
     try {
+      // Resolve Sender ID from Email (Database or ES)
+      const sender = await this.userService.findByEmail(senderEmail);
+      if (!sender) throw new Error("Sender not found");
+      const senderId = sender.id;
+
       const fullMessage = await this.dataSource.transaction(async (manager) => {
         const recipients = await this.buildRecipientInputs(dto, true);
         const subject = dto.subject?.trim() ?? "";
@@ -921,9 +931,9 @@ export class MailService {
 
   private async resolveThread(
     manager: EntityManager,
-    threadId: string | undefined,
-    subject: string,
-  ) {
+    threadId?: string,
+    subject?: string,
+  ): Promise<Thread> {
     if (threadId) {
       const thread = await manager.findOne(Thread, { where: { id: threadId } });
       if (!thread) {
@@ -932,12 +942,22 @@ export class MailService {
       return thread;
     }
 
-    return manager.save(
-      manager.create(Thread, {
-        subject,
-        lastActivityAt: new Date(), // initialize immediately
-      }),
-    );
+    if (subject) {
+      const normalizedSubject = subject.toLowerCase().trim();
+      const existingThread = await manager.findOne(Thread, {
+        where: { subject: normalizedSubject },
+        order: { lastActivityAt: 'DESC' }, // Link to the most recent one
+      });
+
+      if (existingThread) return existingThread;
+    }
+
+    const newThread = manager.create(Thread, {
+      subject: subject?.toLowerCase().trim() || "No Subject",
+      lastActivityAt: new Date(),
+    });
+
+    return manager.save(newThread);
   }
 
   private async updateThreadSubject(
@@ -952,37 +972,52 @@ export class MailService {
   }
 
   private async buildRecipientInputs(
-    dto: Partial<Pick<SendMailDto, "toIds" | "ccIds" | "bccIds">> &
-      Partial<Pick<SaveDraftDto, "toIds" | "ccIds" | "bccIds">>,
+    dto: Partial<Pick<SendMailDto, "toEmails" | "ccEmails" | "bccEmails">> &
+      Partial<Pick<SaveDraftDto, "toEmails" | "ccEmails" | "bccEmails">>,
     requireAtLeastOne: boolean,
   ): Promise<RecipientInput[]> {
-    const mapped = this.dedupeRecipients([
-      ...this.mapRecipients(dto.toIds ?? [], "to"),
-      ...this.mapRecipients(dto.ccIds ?? [], "cc"),
-      ...this.mapRecipients(dto.bccIds ?? [], "bcc"),
-    ]);
+     // Map the emails to temporary objects with their types
+    const rawRecipients = [
+      ...(dto.toEmails ?? []).map(email => ({ email: email.toLowerCase().trim(), type: "to" })),
+      ...(dto.ccEmails ?? []).map(email => ({ email: email.toLowerCase().trim(), type: "cc" })),
+      ...(dto.bccEmails ?? []).map(email => ({ email: email.toLowerCase().trim(), type: "bcc" })),
+    ];
 
-    if (requireAtLeastOne && mapped.length === 0) {
+    if (requireAtLeastOne && rawRecipients.length === 0) {
       throw new BadRequestException("At least one recipient is required");
     }
 
-    if (!mapped.length) {
+    if (!rawRecipients.length) {
       return [];
     }
 
+    // Find Users by Email in the DB
+    const distinctEmails = [...new Set(rawRecipients.map(r => r.email))];
     const users = await this.userRepo.find({
       where: {
-        id: In(mapped.map((recipient) => recipient.recipient_id)),
+        email: In(distinctEmails), // Query by email
         isActive: true,
       },
-      select: ["id"],
+      select: ["id", "email"], // We need ID to link the recipient
     });
 
-    if (users.length !== mapped.length) {
-      throw new BadRequestException("One or more recipients are invalid");
+    // Validate that all provided emails actually exist as users
+    if (users.length !== distinctEmails.length) {
+      if (requireAtLeastOne) {
+        throw new BadRequestException("One or more recipient emails are invalid");
+      } else {
+        // For drafts, just log a warning or filter out the missing ones
+        this.logger.warn("Some draft recipients not found in DB; skipping those entries.");
+      }
     }
 
-    return mapped;
+    const emailToIdMap = new Map(users.map(u => [u.email, u.id]));
+
+    // Return the final RecipientInput array using the IDs found
+    return rawRecipients.map(r => ({
+      recipient_id: emailToIdMap.get(r.email),
+      type: r.type as 'to' | 'cc' | 'bcc', 
+    }));
   }
 
   private mapRecipients(ids: string[], type: RecipientType): RecipientInput[] {
@@ -1078,9 +1113,9 @@ export class MailService {
 
   private includesRecipientUpdate(dto: SaveDraftDto) {
     return (
-      dto.toIds !== undefined ||
-      dto.ccIds !== undefined ||
-      dto.bccIds !== undefined
+      dto.toEmails !== undefined ||
+      dto.ccEmails !== undefined ||
+      dto.bccEmails !== undefined
     );
   }
 

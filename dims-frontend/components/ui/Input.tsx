@@ -5,7 +5,13 @@
 // - Renders optional label above, error message below in dana-red
 // - Supports left/right icon slots
 import getAutoCompleteValue from "@/utils/getAutoCompleteValue";
-import { UseFormRegisterReturn } from "react-hook-form";
+import { forwardRef, InputHTMLAttributes } from "react";
+import { FieldError, UseFormRegisterReturn } from "react-hook-form";
+
+interface ComposeInputProp extends InputHTMLAttributes<HTMLInputElement> {
+  label: string;
+  errors?: FieldError;
+}
 
 interface InputProp {
   label?: string;
@@ -40,24 +46,20 @@ export default function Input({label, placeholder, register, type, name, disable
 
 
 
-export const ComposeInput = ({placeholder, register,label, type, className, autoComplete, name, errors, disabled}: InputProp) => {
-  const autocompleteValue = getAutoCompleteValue(name, type);
+export const ComposeInput = forwardRef<HTMLInputElement, ComposeInputProp>(({ label, errors, ...props }, ref) => {
+  // const autocompleteValue = getAutoCompleteValue(name, type);
 
   // TODO: Implement
   return (
     <div >
       <p className="text-xs mb-1 text-gray-500">{label}</p>
-      <input 
-        {...register} 
-        type={type} 
-        id={name}
-        name={name} 
-        autoComplete={autocompleteValue}
-        disabled={disabled} 
+      <input
+        {...props} 
+        ref={ref}
         className={`w-full border-b py-3 text-sm border-gray-100 outline-none}  placeholder={placeholder ${errors ? 'border-red-500' : 'border-gray-100'}`}
       />
       {errors && <span className="text-xs text-red-500 px-1">{errors.message}</span>}
 
     </div>
   )
-}
+})

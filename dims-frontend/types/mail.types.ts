@@ -92,16 +92,9 @@ export interface ComposeData {
   threadId?: string;
   draftId?: string;
   isDraft?: boolean;
-  // Updated from recipient_id (UUID) to email (string)
-  // State-helper fields (optional)
-  to?: string[]; 
-  cc?: string[]; 
-  bcc?: string[];
-  // Final payload field
-  recipients: {
-    email: string;
-    type: 'to' | 'cc' | 'bcc';
-  }[];
+  toEmails?: string[]; 
+  ccEmails?: string[]; 
+  bccEmails?: string[];
 }
 
 
