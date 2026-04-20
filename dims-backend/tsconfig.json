@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "ignoreDeprecations": "6.0",
     "esModuleInterop": true,                // Required for modern imports
     "allowSyntheticDefaultImports": true,   // Required for express-session
     "moduleResolution": "node16",   
@@ -13,7 +12,6 @@
     "sourceMap": true,
     "rootDir": "./",
     "outDir": "./dist",
-    "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": false,
@@ -22,10 +20,10 @@
     "forceConsistentCasingInFileNames": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@modules/*": ["src/modules/*"],
-      "@config/*": ["src/config/*"],
-      "@common/*": ["src/common/*"],
-      "@jobs/*": ["src/jobs/*"]
+      "@modules/*": ["./src/modules/*"],
+      "@config/*": ["./src/config/*"],
+      "@common/*": ["./src/common/*"],
+      "@jobs/*": ["./src/jobs/*"]
     }
   },
   "include": ["src/**/*"]
