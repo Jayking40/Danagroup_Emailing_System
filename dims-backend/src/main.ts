@@ -13,9 +13,9 @@ import cookieParser = require("cookie-parser");
 async function bootstrap() {
   try {
     const app = await NestFactory.create(AppModule, {
-    abortOnError: true, // This will force the app to crash and show the error
-    logger: ['error', 'warn', 'log', 'debug'], // Enable debug logs
-  });
+      abortOnError: true, // This will force the app to crash and show the error
+      logger: ["error", "warn", "log", "debug"], // Enable debug logs
+    });
 
     //Initialize ioredis client
     // const redisClient = new Redis({
@@ -29,9 +29,8 @@ async function bootstrap() {
         rejectUnauthorized: false,
       },
       // Upstash often works better with family: 4 or 6 depending on your local network
-      // family: 4 
+      // family: 4
     });
-
 
     app.use(
       session({

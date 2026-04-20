@@ -9,7 +9,7 @@ import KeyvRedis from "@keyv/redis";
 // Core Modules
 import { AuthModule } from "./modules/auth/auth.module";
 import { UsersModule } from "./modules/users/users.module";
- import { FilesModule } from "./modules/files/files.module";
+import { FilesModule } from "./modules/files/files.module";
 import { AnnouncementsModule } from "./modules/announcements/announcements.module";
 import { DepartmentsModule } from "./modules/departments/departments.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
@@ -50,11 +50,9 @@ import { CacheModule } from "@nestjs/cache-manager";
       inject: [ConfigService],
       useFactory: async (config: ConfigService) => {
         const redisUrl = config.get<string>("REDIS_URL");
-        
+
         return {
-          stores: [
-            new KeyvRedis(redisUrl) 
-          ],
+          stores: [new KeyvRedis(redisUrl)],
           ttl: 600000, // 10 minutes
         };
       },

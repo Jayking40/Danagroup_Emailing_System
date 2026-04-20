@@ -17,8 +17,16 @@ import { Attachment } from "@modules/files/entities/attachment.entity";
 @Module({
   imports: [
     SearchModule,
-    TypeOrmModule.forFeature([User, MessageRecipient, Attachment, Message, Thread, Department, Subsidiary]),
-    forwardRef(() =>  MailModule)
+    TypeOrmModule.forFeature([
+      User,
+      MessageRecipient,
+      Attachment,
+      Message,
+      Thread,
+      Department,
+      Subsidiary,
+    ]),
+    forwardRef(() => MailModule),
   ],
   controllers: [UsersController],
   providers: [UsersService, UsersSearchService],

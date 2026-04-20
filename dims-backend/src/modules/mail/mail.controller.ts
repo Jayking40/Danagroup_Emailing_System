@@ -18,7 +18,7 @@ import { MailQueryDto } from "./dto/mail-query.dto";
 import { SendMailDto } from "./dto/send-mail.dto";
 import { SaveDraftDto } from "./dto/save-draft.dto";
 import { UpdateMessageStatusDto } from "./dto/update-message-status.dto";
-import { CacheInterceptor } from '@nestjs/cache-manager';
+import { CacheInterceptor } from "@nestjs/cache-manager";
 
 @ApiTags("mail")
 @ApiBearerAuth()
@@ -33,7 +33,7 @@ export class MailController {
     @CurrentUser() user: { email: string },
     @Query() query: MailQueryDto,
   ) {
-    return this.mailService.getFolder(user.email, 'inbox', query);
+    return this.mailService.getFolder(user.email, "inbox", query);
   }
 
   @Get("sent")
@@ -42,7 +42,7 @@ export class MailController {
     @CurrentUser() user: { email: string },
     @Query() query: MailQueryDto,
   ) {
-    return this.mailService.getFolder(user.email, 'sent', query);
+    return this.mailService.getFolder(user.email, "sent", query);
   }
 
   @Get("drafts")
@@ -66,7 +66,7 @@ export class MailController {
   @Post("send")
   @ApiOperation({ summary: "Send a new message or send an existing draft" })
   async send(
-    @CurrentUser() user: { userId: string; email: string; },
+    @CurrentUser() user: { userId: string; email: string },
     @Body() dto: SendMailDto,
   ) {
     return this.mailService.send(dto, user.email);
@@ -156,7 +156,7 @@ export class MailController {
     @CurrentUser() user: { userId: string },
     @Query() query: MailQueryDto,
   ) {
-    return this.mailService.getFolder(user.userId, 'trash', query);
+    return this.mailService.getFolder(user.userId, "trash", query);
   }
 
   @Patch(":id/restore")
@@ -174,9 +174,11 @@ export class MailController {
     return this.mailService.emptyAllTrash(user.userId);
   }
 
-  @Get('messages/:id')
-  @ApiOperation({ summary: " return a single message by ID, including its recipients."})
-  async getMessage(@Param('id') id: string, @Req() req) {
+  @Get("messages/:id")
+  @ApiOperation({
+    summary: " return a single message by ID, including its recipients.",
+  })
+  async getMessage(@Param("id") id: string, @Req() req) {
     return this.mailService.getMessageById(id, req.user.id);
   }
 

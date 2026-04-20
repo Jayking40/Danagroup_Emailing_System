@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from "@nestjs/bullmq";
+import { WorkerHost } from "@nestjs/bullmq";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Job } from "bullmq";
 import { Repository } from "typeorm";

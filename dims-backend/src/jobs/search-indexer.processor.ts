@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from "@nestjs/bullmq";
+import { WorkerHost } from "@nestjs/bullmq";
 import { Job } from "bullmq";
 
 // TODO: Process 'search-indexer' queue jobs
