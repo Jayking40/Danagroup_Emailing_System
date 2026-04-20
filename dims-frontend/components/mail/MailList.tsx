@@ -23,6 +23,18 @@ export default function MailList({ viewMode, searchParams }: MailListProps) {
   const router = useRouter();
   const params = useParams();
   const currentThreadId = params.threadId as string;
+  const {openCompose} = useMailStore();
+
+  // Get Data & Mutations from your Hook
+  const mailApi = useMail();
+  const folderHooks = {
+    inbox: mailApi.useInbox,
+    sent: mailApi.useSent,
+    drafts: mailApi.useDrafts,
+    trash: mailApi.useTrash,
+  };
+
+  const { mutate: markAsRead } = mailApi.useMarkRead();
 
   const page = searchParams?.page || 1;
   // 1. Get Global UI State from Zustand
@@ -32,14 +44,7 @@ export default function MailList({ viewMode, searchParams }: MailListProps) {
     resetSelection 
   } = useMailStore();
 
-  // 2. Get Data & Mutations from your Hook
-  const mailApi = useMail();
-  const folderHooks = {
-    inbox: mailApi.useInbox,
-    sent: mailApi.useSent,
-    drafts: mailApi.useDrafts,
-    trash: mailApi.useTrash,
-  };
+  
   
   // Fetch real data (Page 1 for now)
   const { data, isLoading } = folderHooks[viewMode as keyof typeof folderHooks](page);
@@ -109,54 +114,62 @@ export default function MailList({ viewMode, searchParams }: MailListProps) {
       {/* List Area */}
       <div className="flex-1 overflow-y-auto">
         {threads.length > 0 ? (
-          threads.map((message:InboxMessage) => {
-            console.log(message);
-            return(
-            <button
-              key={message.id} // Keep message.id as the React key
-              onClick={() => {
-                // Use threadId if available, fallback to id
-                const idToUse = message.latestMessage.threadId; 
+          threads.map((item: any) => {
+          // Resolve whether we are looking at a Thread or a direct Message (Draft)
+          const isThread = !!item.latestMessage;
+          const messageData = isThread ? item.latestMessage : item;
+          
+          
+          // Resolve IDs and display data
+          const threadId = isThread ? messageData.threadId : item.threadId;
+          const sender = messageData.sender || { firstName: "Draft", lastName: "" };
+          const bodyPreview = htmlToText(messageData.bodyHtml) || messageData.body || "(No content)";
+          const date = messageData.createdAt || item.createdAt;
+          
 
-                if (idToUse) {
-                  router.push(`/mail/${viewMode}/${idToUse}`);
-                } else {
-                  console.error("No ID found for message:", message);
+          return (
+            <button
+              key={item.id}
+              onClick={() => {
+                if (viewMode === 'drafts') {
+                  openCompose(messageData.id); // This sets composeDraftId in store
+                  return; // Stop here so we don't route to the thread view
+                }
+
+                markAsRead(messageData.id)
+                
+                if (threadId) {
+                  router.push(`/mail/${viewMode}/${threadId}`);
                 }
               }}
               className={`mail-list-item w-full flex items-start text-left p-4 border-b hover:bg-slate-50 transition-colors ${
-                //needs change
-                message.latestMessage.thread ? "bg-slate-50/50 border-l-4 border-l-dana-blue" : ""
-              } ${currentThreadId === message.subject ? "bg-slate-100" : ""}`}
+                currentThreadId === threadId ? "bg-slate-100" : ""
+              }`}
             >
-              <div className="">
+              <div className="flex items-center gap-3 w-full">
                 <input
                   type="checkbox"
-                  checked={selectedMessageIds.includes(message.latestMessage.threadId)}
-                  onChange={() => toggleMessageSelection(message.latestMessage.threadId)}
+                  checked={selectedMessageIds.includes(item.id)}
+                  onChange={() => toggleMessageSelection(item.id)}
                   onClick={(e) => e.stopPropagation()}
                   className="h-4 w-4 rounded"
                 />
-              </div>
-              <div className="h-16 mx-auto flex items-center gap-2 overflow-hidden">
-                <div className="min-w-12 min-h-12 rounded-full flex justify-center items-center bg-pink-600"></div>
+                
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="truncate text-sm font-semibold ">{message.latestMessage.sender?.firstName} {message.latestMessage.sender?.lastName}</div>
+                    <div className="truncate text-sm font-semibold">
+                      {isThread ? `${sender.firstName} ${sender.lastName}` : <span className="text-dana-red-600 font-bold">Draft</span>}
+                    </div>
                     <div className="text-[10px] text-muted-foreground">
-                      {message.latestMessage.createdAt ? (
-                        formatDistanceToNow(new Date(message.latestMessage.createdAt), { addSuffix: true })
-                      ) : (
-                        "No date"
-                      )}
+                      {date ? formatDistanceToNow(new Date(date), { addSuffix: true }) : "No date"}
                     </div>
                   </div>
-                  <p className="truncate text-sm font-medium">{message.subject}</p>
-                  <p className="truncate text-xs text-muted-foreground">{htmlToText(message.latestMessage.bodyHtml) || message.latestMessage.body}</p>
+                  <p className="truncate text-sm font-medium">{item.subject || "(No Subject)"}</p>
+                  <p className="truncate text-xs text-muted-foreground">{bodyPreview}</p>
                 </div>
               </div>
             </button>
-          )
+          );
         })
         ) : (
           <EmptyState />

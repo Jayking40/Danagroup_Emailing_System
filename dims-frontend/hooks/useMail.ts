@@ -118,6 +118,19 @@ export function useMail() {
         onSuccess: invalidateMail,
       }),
 
+    // Single Message Actions
+    useGetMessage: (messageId: string) => 
+      useQuery<Message>({
+        queryKey: ['message', messageId],
+        queryFn: async () => {
+          // Using your 'api' instance and unwrapResponse for consistency
+          const res = await api.get<ApiEnvelope<Message>>(`/mail/messages/${messageId}`);
+          return unwrapResponse(res.data);
+        },
+        enabled: !!messageId, // Only runs if messageId is truthy
+        staleTime: 300000,    // 5 minutes
+      }),  
+
     // Thread Actions
     useMarkThreadRead: () =>
       useMutation({
@@ -126,9 +139,9 @@ export function useMail() {
       }),
 
     // Single Message Actions
-    useMarkRead: (id: string) =>
+    useMarkRead: () =>
       useMutation({
-        mutationFn: async () => {
+        mutationFn: async (id: string) => {
           const res = await api.patch<ApiEnvelope<Message>>(`/mail/messages/${id}/read`);
           return unwrapResponse(res.data);
         },

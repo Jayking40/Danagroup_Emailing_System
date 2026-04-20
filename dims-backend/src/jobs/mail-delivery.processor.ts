@@ -6,7 +6,7 @@ import { MessageRecipient } from "../modules/mail/entities/message-recipient.ent
 import { Message } from "../modules/mail/entities/message.entity";
 import { NotificationsService } from "../modules/notifications/notifications.service";
 
-@Processor("mail-delivery")
+// @Processor("mail-delivery")
 export class MailDeliveryProcessor extends WorkerHost {
   constructor(
     @InjectRepository(Message)

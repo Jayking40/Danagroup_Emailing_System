@@ -10,7 +10,7 @@ import {
 import { InjectQueue } from "@nestjs/bullmq";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Queue } from "bullmq";
-import { Brackets, In, Repository, SelectQueryBuilder } from "typeorm";
+import { Brackets, In, IsNull, Repository, SelectQueryBuilder } from "typeorm";
 import { Attachment } from "../files/entities/attachment.entity";
 import { User } from "../users/entities/user.entity";
 import { MailQueryDto } from "./dto/mail-query.dto";
@@ -77,59 +77,79 @@ export class MailService {
     page: number,
     limit: number,
   ) {
-    // 1. Get Total Count
-    const totalResult = await baseQuery
-      .clone()
-      .orderBy()
-      .select("COUNT(DISTINCT thread.id)", "count")
-      .getRawOne<{ count: string }>();
+    try {
+      // 1. Get total count using a cloned query to avoid side effects
+      const totalResult = await baseQuery
+        .clone()
+        .select("COUNT(DISTINCT thread.id)", "count")
+        .getRawOne<{ count: string }>();
 
-    const total = Number(totalResult?.count || 0);
+      const total = Number(totalResult?.count || 0);
 
-    // 2. Get Paginated Rows
-    const rows = await baseQuery
-      .clone()
-      .distinct(true)
-      .select([
-        "thread.id AS id",
-        "thread.subject AS subject",
-        "thread.last_activity_at AS lastActivityAt",
-      ])
-      .addSelect(
-        `COUNT(DISTINCT CASE WHEN recipient.is_read = false THEN message.id END)`,
-        "unreadCount",
-      )
-      .groupBy("thread.id")
-      .addGroupBy("thread.subject")
-      .addGroupBy("thread.last_activity_at")
-      .orderBy("thread.last_activity_at", "DESC")
-      .offset((page - 1) * limit)
-      .limit(limit)
-      .getRawMany();
+      // 2. Prepare the rows query
+      const rowsQuery = baseQuery.clone();
 
-    // 3. Get Latest Message Previews
-    const threadIds = rows.map((row) => row.id);
-    const latestMessages = threadIds.length
-      ? await this.getLatestMessagesByThread(threadIds, userId)
-      : [];
+      // Check if 'message' alias already exists to prevent "table name specified more than once"
+      const hasMessageAlias = rowsQuery.expressionMap.joinAttributes.some(
+        (join) => join.alias.name === "message",
+      );
 
-    const latestByThread = new Map(
-      latestMessages.map((message) => [message.threadId, message]),
-    );
+      if (!hasMessageAlias) {
+        rowsQuery.leftJoin("thread.messages", "message");
+      }
 
-    // 4. Return Standard Response
-    return {
-      data: rows.map((row) => ({
-        id: row.id,
-        subject: row.subject,
-        lastActivityAt: row.lastActivityAt,
-        unreadCount: Number(row.unreadCount || 0),
-        latestMessage: latestByThread.get(row.id) ?? null,
-      })),
-      total,
-      page,
-      lastPage: total === 0 ? 1 : Math.ceil(total / limit),
-    };
+      // 3. Execute the paginated query
+      const rows = await rowsQuery
+        .leftJoin(
+          "message.recipients",
+          "unread_recipient", // We changed this from "recipient"
+          "unread_recipient.recipient_id = :userId",
+          { userId },
+        )
+        .select([
+          "thread.id AS id",
+          "thread.subject AS subject",
+          "thread.last_activity_at AS lastActivityAt",
+        ])
+        .addSelect(
+          // We update the COUNT to use the new alias "unread_recipient"
+          "COUNT(DISTINCT CASE WHEN unread_recipient.is_read = false THEN message.id END)",
+          "unreadCount",
+        )
+        .groupBy("thread.id")
+        .addGroupBy("thread.subject")
+        .addGroupBy("thread.last_activity_at")
+        .orderBy("thread.last_activity_at", "DESC")
+        .offset((page - 1) * limit)
+        .limit(limit)
+        .getRawMany();
+
+      // 4. Fetch the latest messages for the current page of threads
+      const threadIds = rows.map((r) => r.id);
+      const latestMessages = threadIds.length 
+        ? await this.getLatestMessagesByThread(threadIds, userId) 
+        : [];
+
+      const latestByThread = new Map(
+        latestMessages.map((m) => [m.threadId, m]),
+      );
+
+      // 5. Map results to final DTO structure
+      return {
+        data: rows.map((row) => ({
+          id: row.id,
+          subject: row.subject,
+          lastActivityAt: row.lastActivityAt,
+          unreadCount: Number(row.unreadCount || 0),
+          latestMessage: latestByThread.get(row.id) ?? null,
+        })),
+        total,
+        page,
+        lastPage: Math.ceil(total / limit) || 1,
+      };
+    } catch (error) {
+      this.handleError("paginateThreads", error);
+    }
   }
 
   async searchUserMail(userId: string, query: string, limit = 10) {
@@ -138,7 +158,6 @@ export class MailService {
         .createQueryBuilder("message")
         .leftJoin("message.recipients", "recipient")
         .where("message.is_draft = false")
-        // User is either the sender OR a recipient
         .andWhere(
           new Brackets((qb) => {
             qb.where("message.senderId = :userId", { userId }).orWhere(
@@ -147,20 +166,16 @@ export class MailService {
             );
           }),
         )
-        // The search query matches subject or body
         .andWhere(
           new Brackets((qb) => {
             qb.where("message.subject ILIKE :query", {
               query: `%${query}%`,
-            }).orWhere("message.body ILIKE :query", { query: `%${query}%` });
+            }).orWhere("message.body ILIKE :query", {
+              query: `%${query}%`,
+            });
           }),
         )
-        .select([
-          "message.id",
-          "message.subject",
-          "message.body",
-          "message.sentAt",
-        ])
+        .distinct(true) // ✅ FIX duplicate results
         .orderBy("message.sentAt", "DESC")
         .take(limit)
         .getMany();
@@ -169,70 +184,50 @@ export class MailService {
     }
   }
 
-  async getInbox(userId: string, query: MailQueryDto) {
+  async getInbox(userEmail: string, query: MailQueryDto) {
     try {
+      const user = await this.userService.findByEmail(userEmail);
+      if (!user) throw new NotFoundException("User not found");
+
       const { page, limit } = this.normalizePagination(query);
 
       const baseQuery = this.threadRepo
         .createQueryBuilder("thread")
-        .innerJoin("thread.messages", "message", "message.is_draft = false")
-        .innerJoin(
-          "message.recipients",
-          "recipient",
-          `
-          recipient.recipient_id = :userId 
-          AND recipient.is_deleted = false
-          `,
-          { userId },
-        );
+        .innerJoin("thread.messages", "message")
+        .innerJoin("message.recipients", "recipient")
+        .where("recipient.recipient_id = :userId", { userId: user.id })
+        .andWhere("recipient.deleted_at IS NULL")
+        .andWhere("message.is_draft = false");
 
-      return this.paginateThreads(baseQuery, userId, page, limit);
+      return this.paginateThreads(baseQuery, user.id, page, limit);
     } catch (error) {
       this.handleError("getInbox", error);
     }
   }
 
-  async getSent(
-    userId: string,
-    query: MailQueryDto,
-  ): Promise<MailboxResponse<Message>> {
+
+  async getSent(userEmail: string, query: MailQueryDto) {
     try {
-      const { page, limit } = this.normalizePagination(query);
+      // 1. RESOLVE EMAIL TO UUID HERE
+      const user = await this.userService.findByEmail(userEmail);
+      if (!user) throw new NotFoundException("User not found");
+      const userId = user.id; // This is the UUID
 
-      const [data, total] = await this.messageRepo.findAndCount({
-        where: {
-          senderId: userId,
-          is_draft: false,
-          sender_deleted_at: null,
-        },
-        relations: {
-          thread: true,
-          sender: true,
-          recipients: {
-            recipient: true,
-          },
-          attachments: true,
-        },
-        order: {
-          sentAt: "DESC",
-          createdAt: "DESC",
-        },
-        skip: (page - 1) * limit,
-        take: limit,
-      });
+      // 2. BUILD THE QUERY USING THE UUID
+      const baseQuery = this.threadRepo
+        .createQueryBuilder("thread")
+        .innerJoin("thread.messages", "message")
+        .where("message.senderId = :userId", { userId }) // Use UUID here
+        .andWhere("message.is_draft = false")
+        .andWhere("message.sender_deleted_at IS NULL");
 
-      console.log("GET SENT USER:", userId);
-
-      return {
-        data,
-        total,
-        page,
-        lastPage: total === 0 ? 1 : Math.ceil(total / limit),
-      };
+      // 3. PASS THE UUID (userId), NOT THE EMAIL
+      return this.paginateThreads(baseQuery, userId, query.page, query.limit);
     } catch (error) {
       this.handleError("getSent", error);
     }
   }
+
 
   async getDrafts(
     userId: string,
@@ -304,38 +299,41 @@ export class MailService {
     }
   }
 
-  async getFolder(userId: string, folder: string, query: MailQueryDto) {
+  async getFolder(userEmail: string, folder: string, query: MailQueryDto) {
+    const user = await this.userService.findByEmail(userEmail);
+    if (!user) throw new NotFoundException("User not found");
+    const userId = user.id; // Correct UUID
     const { page, limit } = this.normalizePagination(query);
 
-    const baseQuery = this.threadRepo
-      .createQueryBuilder("thread")
-      .innerJoinAndSelect("thread.messages", "message")
-      .leftJoinAndSelect("message.sender", "sender")
-      .innerJoin("message.recipients", "recipient")
-      // Ensure we are only looking at messages for THIS user
-      .where("recipient.recipient_id = :userId", { userId });
+    const baseQuery = this.threadRepo.createQueryBuilder("thread")
+      .innerJoin("thread.messages", "message");
 
     // Add specific folder filters
-    if (folder === 'inbox') {
-    baseQuery.andWhere("recipient.is_deleted = false");
-    }
-
     if (folder === 'sent') {
-      baseQuery.andWhere("message.senderId = :userId", { userId });
-    }
+      // For SENT: You are the SENDER
+      baseQuery.where("message.senderId = :userId", { userId })
+              .andWhere("message.is_draft = false")
+              .andWhere("message.sender_deleted_at IS NULL");
+    } else if (folder === 'drafts') {
+      // For DRAFTS: You are the SENDER and it's a draft
+      baseQuery.where("message.senderId = :userId", { userId })
+              .andWhere("message.is_draft = true");
+    } else {
+      // For INBOX / TRASH / ARCHIVE: You are the RECIPIENT
+      baseQuery.innerJoin("message.recipients", "recipient")
+              .where("recipient.recipient_id = :userId", { userId })
+              .andWhere("message.is_draft = false");
 
-    if (folder === 'trash') {
-      baseQuery.andWhere("recipient.is_deleted = true");
+      if (folder === 'inbox') {
+        baseQuery.andWhere("recipient.deleted_at IS NULL");
+      } else if (folder === 'trash') {
+        baseQuery.andWhere("recipient.deleted_at IS NOT NULL");
+      }
     }
-
-    if (folder === 'drafts') {
-      baseQuery.andWhere("message.is_draft = true");
-    }
-
-    baseQuery.orderBy("thread.updatedAt", "DESC");
 
     return this.paginateThreads(baseQuery, userId, page, limit);
   }
+
 
 
 
@@ -345,6 +343,7 @@ export class MailService {
       const sender = await this.userService.findByEmail(senderEmail);
       if (!sender) throw new Error("Sender not found");
       const senderId = sender.id;
+      
 
       const fullMessage = await this.dataSource.transaction(async (manager) => {
         const recipients = await this.buildRecipientInputs(dto, true);
@@ -389,15 +388,6 @@ export class MailService {
         if (!thread.subject && dto.subject) {
           await this.updateThreadSubject(manager, thread, dto.subject.trim());
         }
-
-        //const recipientIds = [...new Set(recipients.map((recipient) => recipient.recipient_id))];
-        // if (process.env.NODE_ENV !== "test" && recipientIds.length) {
-        //   await this.mailQueue.add("deliver", {
-        //     messageId: savedMessage.id,
-        //     recipientIds,
-        //     senderId,
-        //   });
-        // }
 
         console.log("SENDER:", senderId);
         console.log("DTO:", dto);
@@ -447,7 +437,7 @@ export class MailService {
           draft.threadId = thread.id;
           draft.subject = dto.subject ?? draft.subject;
           draft.body = dto.body ?? draft.body ?? "";
-          draft.bodyHtml = dto.bodyHtml ?? draft.bodyHtml ?? null;
+          draft.bodyHtml = dto.bodyHtml ?? (dto.body ? `<p>${dto.body.replace(/\n/g, '<br>')}</p>` : draft.bodyHtml);
           draft.is_draft = true;
           draft.sentAt = null;
           draft.sender_deleted_at = null;
@@ -457,7 +447,7 @@ export class MailService {
             senderId,
             subject,
             body: dto.body ?? "",
-            bodyHtml: dto.bodyHtml ?? null,
+            bodyHtml: dto.bodyHtml ?? (dto.body ? `<p>${dto.body.replace(/\n/g, '<br>')}</p>` : null),
             is_draft: true,
             sentAt: null,
           });
@@ -488,12 +478,36 @@ export class MailService {
           await this.updateThreadSubject(manager, thread, subject);
         }
 
-        return this.getMessageOrFail(manager, savedDraft.id);
+        return await this.getMessageOrFail(manager, savedDraft.id);
       });
     } catch (error) {
       this.handleError("saveDraft", error);
     }
   }
+
+
+  async getMessageById(messageId: string, userId: string) {
+    // Use findOne with an OR condition or check SenderId explicitly
+    const message = await this.messageRepo.findOne({
+      where: [
+        { id: messageId, senderId: userId }, // Case 1: User is the Sender (Drafts)
+        { id: messageId, recipients: { recipient_id: userId } } // Case 2: User is a Recipient
+      ],
+      relations: {
+        thread: true,
+        recipients: { recipient: true },
+        attachments: true,
+      },
+    });
+
+    if (!message) {
+      // This is the error you are currently seeing
+      throw new NotFoundException("Message not found in recipient mailbox");
+    }
+
+    return message;
+  }
+
 
   async readMessage(messageId: string, userId: string) {
     try {
@@ -546,6 +560,21 @@ export class MailService {
 
   async markRead(messageId: string, userId: string, isRead = true) {
     try {
+      // Fetch the message first to check its status
+      const message = await this.messageRepo.findOne({ 
+        where: { id: messageId } 
+      });
+      
+      if (!message) throw new NotFoundException("Message not found");
+
+      // Return early if it's a draft to avoid the recipient check below.
+      if (message.is_draft) {
+        return { 
+          data: { messageId, isRead: false, readAt: null } 
+        };
+      }
+
+      // Look for the recipient record (only for sent messages)
       const recipient = await this.recipientRepo.findOne({
         where: {
           message_id: messageId,
@@ -560,19 +589,20 @@ export class MailService {
       // Avoid unnecessary DB writes
       if (recipient.is_read === isRead) {
         return {
-          messageId,
-          isRead: recipient.is_read,
-          readAt: recipient.read_at,
+          data: {
+            messageId,
+            isRead: recipient.is_read,
+            readAt: recipient.read_at,
+          }
         };
       }
 
       recipient.is_read = isRead;
       recipient.read_at = isRead ? new Date() : null;
-
       await this.recipientRepo.save(recipient);
 
       return {
-        data:{
+        data: {
           messageId,
           isRead: recipient.is_read,
           readAt: recipient.read_at,
@@ -582,6 +612,7 @@ export class MailService {
       this.handleError("markRead", error);
     }
   }
+
 
   async markManyAsRead(messageIds: string[], userId: string) {
     try {
@@ -1014,10 +1045,13 @@ export class MailService {
     const emailToIdMap = new Map(users.map(u => [u.email, u.id]));
 
     // Return the final RecipientInput array using the IDs found
-    return rawRecipients.map(r => ({
-      recipient_id: emailToIdMap.get(r.email),
-      type: r.type as 'to' | 'cc' | 'bcc', 
-    }));
+    return rawRecipients
+    .map(r => {
+      const recipient_id = emailToIdMap.get(r.email);
+      return recipient_id ? { recipient_id, type: r.type as 'to' | 'cc' | 'bcc' } : null;
+    })
+    .filter((r): r is RecipientInput => r !== null); 
+
   }
 
   private mapRecipients(ids: string[], type: RecipientType): RecipientInput[] {
@@ -1046,19 +1080,13 @@ export class MailService {
   ) {
     await manager.delete(MessageRecipient, { message_id: messageId });
 
-    if (!recipients.length) {
-      return;
+    const validRecipients = recipients.filter(r => !!r.recipient_id);
+    if (validRecipients.length > 0) {
+      const entities = validRecipients.map(r => 
+        manager.create(MessageRecipient, { ...r, message_id: messageId })
+      );
+      return await manager.save(entities);
     }
-
-    await manager.save(
-      recipients.map((recipient) =>
-        manager.create(MessageRecipient, {
-          message_id: messageId,
-          recipient_id: recipient.recipient_id,
-          type: recipient.type,
-        }),
-      ),
-    );
   }
 
   private async attachFiles(
@@ -1111,12 +1139,8 @@ export class MailService {
     return draft;
   }
 
-  private includesRecipientUpdate(dto: SaveDraftDto) {
-    return (
-      dto.toEmails !== undefined ||
-      dto.ccEmails !== undefined ||
-      dto.bccEmails !== undefined
-    );
+  private includesRecipientUpdate(dto: SaveDraftDto): boolean {
+    return !!(dto.toEmails?.length || dto.ccEmails?.length || dto.bccEmails?.length);
   }
 
   private async ensureThreadAccess(threadId: string, userId: string) {

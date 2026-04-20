@@ -60,7 +60,7 @@ export const useMailStore = create<MailStore>((set) => ({
   // Compose management
   openCompose: (draftId?: string | null) => set({ 
     isComposeOpen: true, 
-    composeDraftId: draftId ?? null
+    composeDraftId: draftId || null
   }),
   
   closeCompose: () => set({ 

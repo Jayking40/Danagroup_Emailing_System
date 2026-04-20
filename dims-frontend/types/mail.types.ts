@@ -49,7 +49,12 @@ export interface Message {
   isDraft: boolean;
   sentAt?: string;
   createdAt: string;
-  recipients: MessageRecipient[];
+   recipients: {
+    type: 'to' | 'cc' | 'bcc';
+    recipient: {
+      email: string;
+    };
+  }[];
   attachments?: Attachment[];
   latestMessage: Message;
 }
