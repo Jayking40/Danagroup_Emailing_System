@@ -23,8 +23,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: dims-frontend/package-lock.json
+         # cache: "npm"
+         # cache-dependency-path: dims-frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -83,8 +83,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: dims-backend/package-lock.json
+          #cache: "npm"
+          #cache-dependency-path: dims-backend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
