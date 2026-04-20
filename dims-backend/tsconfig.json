@@ -26,5 +26,5 @@
       "@jobs/*": ["src/jobs/*"]
     }
   },
-  "include": ["src/**/*"]
+  "include": ["src", "test"]
 }
