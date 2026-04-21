@@ -24,6 +24,7 @@ services:
     build:
       context: ./dims-backend
       dockerfile: Dockerfile.dev
+    user: "1000:1000"
     volumes:
       - ./dims-backend:/app
       - /app/node_modules

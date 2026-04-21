@@ -26,6 +26,17 @@ import { JwtAuthGuard } from "@common/guards/jwt-auth.guard";
 import { MailModule } from "@modules/mail/mail.module";
 import { CacheModule } from "@nestjs/cache-manager";
 
+function buildRedisUrl(config: ConfigService): string {
+  const url = config.get<string>("REDIS_URL");
+  if (url) return url;
+  const host = config.get<string>("REDIS_HOST", "localhost");
+  const port = config.get<string>("REDIS_PORT", "6379");
+  const password = config.get<string>("REDIS_PASSWORD", "");
+  return password
+    ? `redis://:${password}@${host}:${port}`
+    : `redis://${host}:${port}`;
+}
+
 @Module({
   imports: [
     TerminusModule,
@@ -49,7 +60,7 @@ import { CacheModule } from "@nestjs/cache-manager";
       isGlobal: true,
       inject: [ConfigService],
       useFactory: async (config: ConfigService) => {
-        const redisUrl = config.get<string>("REDIS_URL");
+        const redisUrl = buildRedisUrl(config);
 
         return {
           stores: [new KeyvRedis(redisUrl)],
@@ -65,7 +76,7 @@ import { CacheModule } from "@nestjs/cache-manager";
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         connection: {
-          url: config.get<string>("REDIS_URL"),
+          url: buildRedisUrl(config),
         },
         defaultJobOptions: {
           attempts: 3,
@@ -84,9 +95,11 @@ import { CacheModule } from "@nestjs/cache-manager";
     ElasticsearchModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        node: config.get<string>("ELASTICSEARCH_NODE", "http://localhost:9200"),
+        node: config.get<string>("ELASTICSEARCH_NODE") || config.get<string>("ES_NODE") || "http://localhost:9200",
         maxRetries: 5,
         requestTimeout: 60000,
+        sniffOnStart: false,
+        sniffOnConnectionFault: false,
       }),
     }),
 

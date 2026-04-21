@@ -21,11 +21,25 @@ export class SearchService {
   // This runs automatically when the app starts
   async onApplicationBootstrap() {
     this.logger.log("Initializing Elasticsearch indexes...");
-    await this.ensureIndexExists(this.USER_INDEX);
-    await this.ensureIndexExists(this.MESSAGE_INDEX);
-
+    try {
+      await this.ensureIndexExists(this.USER_INDEX);
+    } catch (err: any) {
+      this.logger.warn(`ensureIndexExists(${this.USER_INDEX}) failed: [${err?.name}] ${err?.message || "(no message)"} status=${err?.meta?.statusCode ?? "?"}`);
+      return;
+    }
+    try {
+      await this.ensureIndexExists(this.MESSAGE_INDEX);
+    } catch (err: any) {
+      this.logger.warn(`ensureIndexExists(${this.MESSAGE_INDEX}) failed: [${err?.name}] ${err?.message || "(no message)"} status=${err?.meta?.statusCode ?? "?"}`);
+      return;
+    }
     this.logger.log("Starting initial data sync...");
-    await this.syncUsersToIndex();
+    try {
+      await this.syncUsersToIndex();
+    } catch (err: any) {
+      this.logger.warn(`syncUsersToIndex failed: [${err?.name}] ${err?.message || "(no message)"} status=${err?.meta?.statusCode ?? "?"}`);
+      return;
+    }
     this.logger.log("Elasticsearch is ready and synced.");
   }
 
@@ -42,60 +56,58 @@ export class SearchService {
     if (!exists) {
       await this.es.indices.create({
         index,
-        body: {
-          settings: {
-            analysis: {
-              // 1. Define a filter that turns underscores into spaces
-              char_filter: {
-                underscore_filter: {
-                  type: "mapping",
-                  mappings: ["_ => \\u0020"],
-                },
+        settings: {
+          analysis: {
+            // 1. Define a filter that turns underscores into spaces
+            char_filter: {
+              underscore_filter: {
+                type: "mapping",
+                mappings: ["_ => \\u0020"],
               },
-              analyzer: {
-                // 2. Use the filter in your autocomplete (for names)
-                autocomplete_analyzer: {
-                  type: "custom",
-                  char_filter: ["underscore_filter"],
-                  tokenizer: "autocomplete_tokenizer",
-                  filter: ["lowercase"],
-                },
-                // 3. Create a clean analyzer for roles/departments
-                text_cleaner: {
-                  type: "custom",
-                  char_filter: ["underscore_filter"],
-                  tokenizer: "standard",
-                  filter: ["lowercase"],
-                },
+            },
+            analyzer: {
+              // 2. Use the filter in your autocomplete (for names)
+              autocomplete_analyzer: {
+                type: "custom",
+                char_filter: ["underscore_filter"],
+                tokenizer: "autocomplete_tokenizer",
+                filter: ["lowercase"],
               },
-              tokenizer: {
-                autocomplete_tokenizer: {
-                  type: "edge_ngram",
-                  min_gram: 1,
-                  max_gram: 20,
-                  token_chars: ["letter", "digit"],
-                },
+              // 3. Create a clean analyzer for roles/departments
+              text_cleaner: {
+                type: "custom",
+                char_filter: ["underscore_filter"],
+                tokenizer: "standard",
+                filter: ["lowercase"],
+              },
+            },
+            tokenizer: {
+              autocomplete_tokenizer: {
+                type: "edge_ngram",
+                min_gram: 1,
+                max_gram: 20,
+                token_chars: ["letter", "digit"],
               },
             },
           },
-          mappings: {
-            properties: {
-              firstName: {
-                type: "text",
-                analyzer: "autocomplete_analyzer",
-                search_analyzer: "standard",
-              },
-              lastName: {
-                type: "text",
-                analyzer: "autocomplete_analyzer",
-                search_analyzer: "standard",
-              },
-              email: { type: "keyword" },
-              // 4. Assign the 'text_cleaner' to these fields
-              role: { type: "text", analyzer: "text_cleaner" },
-              department: { type: "text", analyzer: "text_cleaner" },
-              subsidiary: { type: "text", analyzer: "text_cleaner" },
+        } as any,
+        mappings: {
+          properties: {
+            firstName: {
+              type: "text",
+              analyzer: "autocomplete_analyzer",
+              search_analyzer: "standard",
             },
+            lastName: {
+              type: "text",
+              analyzer: "autocomplete_analyzer",
+              search_analyzer: "standard",
+            },
+            email: { type: "keyword" },
+            // 4. Assign the 'text_cleaner' to these fields
+            role: { type: "text", analyzer: "text_cleaner" },
+            department: { type: "text", analyzer: "text_cleaner" },
+            subsidiary: { type: "text", analyzer: "text_cleaner" },
           },
         },
       });

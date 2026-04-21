@@ -23,14 +23,17 @@ async function bootstrap() {
     //   port: parseInt(process.env.REDIS_PORT) || 6379,
     // });
 
-    const redisClient = new Redis(process.env.REDIS_URL, {
-      tls: {
-        // Upstash requires TLS for connections
-        rejectUnauthorized: false,
-      },
-      // Upstash often works better with family: 4 or 6 depending on your local network
-      // family: 4
-    });
+    const redisPassword = process.env.REDIS_PASSWORD;
+    const resolvedRedisUrl =
+      process.env.REDIS_URL ||
+      (redisPassword
+        ? `redis://:${redisPassword}@${process.env.REDIS_HOST || "localhost"}:${process.env.REDIS_PORT || "6379"}`
+        : `redis://${process.env.REDIS_HOST || "localhost"}:${process.env.REDIS_PORT || "6379"}`);
+    const isTls = resolvedRedisUrl.startsWith("rediss://");
+    const redisClient = new Redis(
+      resolvedRedisUrl,
+      isTls ? { tls: { rejectUnauthorized: false } } : {},
+    );
 
     app.use(
       session({

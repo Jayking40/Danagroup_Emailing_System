@@ -12,9 +12,14 @@ export class RedisHealthIndicator {
     private healthIndicatorService: HealthIndicatorService,
     private configService: ConfigService,
   ) {
-    const redisUrl = this.configService.get<string>("REDIS_URL");
+    const redisPassword = this.configService.get<string>("REDIS_PASSWORD", "");
+    const redisUrl =
+      this.configService.get<string>("REDIS_URL") ||
+      (redisPassword
+        ? `redis://:${redisPassword}@${this.configService.get("REDIS_HOST", "localhost")}:${this.configService.get("REDIS_PORT", "6379")}`
+        : `redis://${this.configService.get("REDIS_HOST", "localhost")}:${this.configService.get("REDIS_PORT", "6379")}`);
     // ✅ This now correctly assigns the instance to the client property
-    this.client = new Redis(redisUrl || "redis://localhost:6379");
+    this.client = new Redis(redisUrl);
   }
 
   async isHealthy(key: string) {
