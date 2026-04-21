@@ -1,0 +1,43 @@
+
+# Cloudflare Tunnel overlay — exposes the app via a public URL
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# QUICK TUNNEL (no Cloudflare account needed):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.tunnel.yml up
+#   → Watch the logs for: "Your quick Tunnel has been created! Visit it at https://xxxxx.trycloudflare.com"
+#   → The URL changes each restart.
+#
+# NAMED TUNNEL (persistent URL, requires Cloudflare account):
+#   1. Install cloudflared locally:  https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+#   2. Authenticate:                 cloudflared tunnel login
+#   3. Create a tunnel:              cloudflared tunnel create dims-dev
+#   4. Copy the tunnel token and set CLOUDFLARE_TUNNEL_TOKEN in your .env
+#   5. Uncomment the "named tunnel" service below and comment out the "quick tunnel" one.
+#   6. docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.tunnel.yml up
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ─── Quick Tunnel (random *.trycloudflare.com URL, zero config) ────────────
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: dims_tunnel
+    command: tunnel --no-autoupdate --url http://nginx:80
+    depends_on:
+      - nginx
+    restart: unless-stopped
+    networks:
+      - dims_net
+
+  # ─── Named Tunnel (persistent URL, needs CLOUDFLARE_TUNNEL_TOKEN in .env) ──
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: dims_tunnel
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+  #   depends_on:
+  #     - nginx
+  #   restart: unless-stopped
+  #   networks:
+  #     - dims_net
