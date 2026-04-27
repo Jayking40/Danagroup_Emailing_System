@@ -10,8 +10,8 @@ import { User } from "./entities/user.entity";
 import { QueryUserDto } from "./dto/query-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { CreateUserDto } from "./dto/create-user.dto";
+import { JobsService } from "@jobs/jobs.service";
 import { UsersSearchService } from "./users-search.service";
-import { SearchService } from "@modules/search/search.service";
 import { Department } from "@modules/departments/entities/department.entity";
 import { Subsidiary } from "@modules/departments/entities/subsidiary.entity";
 import * as bcrypt from "bcrypt";
@@ -29,7 +29,7 @@ export class UsersService {
     @InjectRepository(Subsidiary)
     private readonly subsidiaryRepo: Repository<Subsidiary>,
 
-    private readonly searchUser: SearchService,
+    private readonly jobsService: JobsService,
     private readonly usersSearch: UsersSearchService,
 
     @Inject(forwardRef(() => MailService))
@@ -185,9 +185,8 @@ export class UsersService {
         relations: ["department", "subsidiary"],
       });
 
-      // send the version WITH names to Elasticsearch for better search results
       if (userWithNames) {
-        await this.searchUser.indexUser(userWithNames);
+        await this.jobsService.enqueueUserIndex({ userId: userWithNames.id });
       }
 
       return saved;
@@ -206,7 +205,7 @@ export class UsersService {
         subsidiary: dto.subsidiary ? { id: dto.subsidiary } : undefined,
         department: dto.department ? { id: dto.department } : undefined,
       });
-      await this.searchUser.indexUser(updatedUser);
+      await this.jobsService.enqueueUserIndex({ userId: updatedUser.id });
       return updatedUser;
     } catch (error) {
       this.handleError("update", error);
@@ -221,10 +220,9 @@ export class UsersService {
       user.isActive = false;
 
       const updatedUser = await this.userRepo.save(user);
-      await this.searchUser.deleteUser(id);
+      await this.jobsService.enqueueUserDelete({ userId: id });
 
-      // SYNC TO ES: This updates the 'isActive' flag in the search index
-      await this.searchUser.indexUser(updatedUser);
+      await this.jobsService.enqueueUserIndex({ userId: updatedUser.id });
 
       console.log(
         `User ${user.firstName} ${user.lastName} deactivated successfully`,

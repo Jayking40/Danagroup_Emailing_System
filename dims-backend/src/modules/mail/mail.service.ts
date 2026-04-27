@@ -7,9 +7,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { InjectQueue } from "@nestjs/bullmq";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Queue } from "bullmq";
 import {
   Brackets,
   DataSource,
@@ -31,12 +29,14 @@ import {
 import { Message } from "./entities/message.entity";
 import { Thread } from "./entities/thread.entity";
 import { UserThreadState } from "./entities/UserThreadState.entity";
-import { SearchService } from "@modules/search/search.service";
+import { JobsService } from "@jobs/jobs.service";
 import { UsersService } from "@modules/users/users.service";
 import { DraftMapper } from "./mappers/draft.mapper";
 import { InboxMapper } from "./mappers/inbox.mapper";
 import { MailMapper } from "./mappers/mail.mapper";
+import { MailGateway } from "./mail.gateway";
 import { SentMapper } from "./mappers/sent.mapper";
+import { StarredMapper } from "./mappers/starred.mapper";
 
 type MailboxResponse<T> = {
   data: T[];
@@ -50,7 +50,7 @@ type RecipientInput = {
   type: RecipientType;
 };
 
-type ThreadFolder = "inbox" | "sent" | "trash";
+type ThreadFolder = "inbox" | "sent" | "starred" | "trash";
 
 @Injectable()
 export class MailService {
@@ -70,9 +70,8 @@ export class MailService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(Attachment)
     private readonly attachmentRepo: Repository<Attachment>,
-    @InjectQueue("mail-delivery")
-    private readonly mailQueue: Queue,
-    private readonly searchService: SearchService,
+    private readonly jobsService: JobsService,
+    private readonly mailGateway: MailGateway,
     @Inject(forwardRef(() => UsersService))
     private readonly userService: UsersService,
   ) {}
@@ -177,7 +176,7 @@ export class MailService {
   private prepareThreads(
     threads: Thread[],
     userId: string,
-    mode: "visible" | "trash" = "visible",
+    mode: "visible" | "starred" | "trash" = "visible",
   ) {
     return threads
       .map((thread) => {
@@ -185,7 +184,9 @@ export class MailService {
           .filter((message) =>
             mode === "trash"
               ? this.isMessageInTrashForUser(message, userId)
-              : this.isMessageVisibleToUser(message, userId),
+              : mode === "starred"
+                ? this.isMessageStarredForUser(message, userId)
+                : this.isMessageVisibleToUser(message, userId),
           )
           .sort((left, right) => this.compareMessages(left, right));
 
@@ -221,7 +222,11 @@ export class MailService {
     const threads = this.prepareThreads(
       rows,
       userId,
-      folder === "trash" ? "trash" : "visible",
+      folder === "trash"
+        ? "trash"
+        : folder === "starred"
+          ? "starred"
+          : "visible",
     );
 
     const data =
@@ -229,6 +234,8 @@ export class MailService {
         ? InboxMapper.toResponse(threads, userId)
         : folder === "sent"
           ? SentMapper.toResponse(threads, userId)
+          : folder === "starred"
+            ? InboxMapper.toResponse(threads, userId)
           : InboxMapper.toResponse(threads, userId);
 
     return {
@@ -288,6 +295,57 @@ export class MailService {
           );
         }),
       );
+  }
+
+  private getStarredBaseQuery(userId: string) {
+    return this.threadRepo
+      .createQueryBuilder("thread")
+      .innerJoin(
+        "thread.messages",
+        "filterMessage",
+        "filterMessage.isDraft = false",
+      )
+      .innerJoin(
+        "filterMessage.recipients",
+        "filterRecipient",
+        "filterRecipient.recipientId = :userId AND filterRecipient.isDeleted = false AND filterRecipient.isStarred = true",
+        { userId },
+      );
+  }
+
+  async getStarred(
+    userId: string,
+    query: MailQueryDto,
+  ): Promise<MailboxResponse<any>> {
+    try {
+      const { page, limit } = this.normalizePagination(query);
+
+      const [data, total] = await this.messageRepo
+        .createQueryBuilder("message")
+        .innerJoinAndSelect("message.thread", "thread")
+        .leftJoinAndSelect("message.sender", "sender")
+        .innerJoinAndSelect(
+          "message.recipients",
+          "recipient",
+          "recipient.recipientId = :userId AND recipient.isDeleted = false AND recipient.isStarred = true",
+          { userId },
+        )
+        .leftJoinAndSelect("recipient.recipient", "recipientUser")
+        .where("message.isDraft = false")
+        .orderBy("COALESCE(message.sentAt, message.createdAt)", "DESC")
+        .skip((page - 1) * limit)
+        .take(limit)
+        .getManyAndCount();
+
+      return {
+        data: StarredMapper.toResponse(data, userId),
+        total,
+        page,
+        lastPage: total === 0 ? 1 : Math.ceil(total / limit),
+      };
+    } catch (error) {
+      this.handleError("getStarred", error);
+    }
   }
 
   private async getThreadsByMailbox(
@@ -462,6 +520,8 @@ export class MailService {
           );
         case "drafts":
           return this.getDrafts(userId, query);
+        case "starred":
+          return this.getStarred(userId, query);
         case "trash":
           return this.buildMailboxResponse(
             this.getTrashBaseQuery(userId),
@@ -545,15 +605,10 @@ export class MailService {
         };
       });
 
-      // async indexing (non-blocking)
-      setImmediate(async () => {
-        try {
-          const fullMessage = await this.getMessageOrFail(this.dataSource.manager, result.id);
-          await this.searchService.indexMessage(fullMessage);
-        } catch (err) {
-          this.logger.warn(`Search indexing skipped for message ${result.id}`);
-        }
-      });
+      await Promise.all([
+        this.jobsService.enqueueMailDelivery({ messageId: result.id }),
+        this.jobsService.enqueueMessageIndex({ messageId: result.id }),
+      ]);
 
       const response = MailMapper.toSendMailResponse(result);
 
@@ -749,6 +804,7 @@ export class MailService {
         message.threadId,
         userId,
       );
+      this.emitMailReadEvent(userId, messageId, message.threadId, recipient.readAt);
 
       return {
         data: {
@@ -786,11 +842,15 @@ export class MailService {
 
       const messages = await this.messageRepo.find({
         where: { id: In(messageIds) },
-        select: ["threadId"],
+        select: ["id", "threadId"],
       });
 
       for (const threadId of [...new Set(messages.map((message) => message.threadId))]) {
         await this.refreshUserThreadState(this.dataSource.manager, threadId, userId);
+      }
+
+      for (const message of messages) {
+        this.emitMailReadEvent(userId, message.id, message.threadId, new Date());
       }
 
       return {
@@ -827,6 +887,11 @@ export class MailService {
         .execute();
 
       await this.refreshUserThreadState(this.dataSource.manager, threadId, userId);
+      this.mailGateway.emitMailRead(userId, {
+        threadId,
+        isRead: true,
+        readAt: new Date().toISOString(),
+      });
 
       return {
         data: {
@@ -1023,6 +1088,7 @@ export class MailService {
         const threadId = message.threadId;
         await this.messageRepo.delete(messageId);
         await this.refreshThreadAfterMutation(this.dataSource.manager, threadId);
+        await this.jobsService.enqueueMessageDelete({ messageId });
         return { messageId, status: "permanently_deleted_by_sender" };
       }
 
@@ -1103,6 +1169,10 @@ export class MailService {
         .andWhere("senderDeletedAt IS NOT NULL")
         .execute();
 
+      for (const message of senderMessages.filter((item) => !!item.senderDeletedAt)) {
+        await this.jobsService.enqueueMessageDelete({ messageId: message.id });
+      }
+
       for (const threadId of affectedThreadIds) {
         await this.refreshUserThreadState(this.dataSource.manager, threadId, userId);
         await this.refreshThreadAfterMutation(this.dataSource.manager, threadId);
@@ -1117,6 +1187,98 @@ export class MailService {
     } catch (error) {
       this.handleError("emptyAllTrash", error);
     }
+  }
+
+  async purgeExpiredTrash(olderThanDays = 30) {
+    try {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - olderThanDays);
+
+      const expiredRecipientRows = await this.recipientRepo
+        .createQueryBuilder("recipient")
+        .where("recipient.isDeleted = true")
+        .andWhere("recipient.deletedAt IS NOT NULL")
+        .andWhere("recipient.deletedAt <= :cutoff", { cutoff })
+        .getMany();
+
+      const senderMessages = await this.messageRepo
+        .createQueryBuilder("message")
+        .where("message.senderDeletedAt IS NOT NULL")
+        .andWhere("message.senderDeletedAt <= :cutoff", { cutoff })
+        .select(["message.id", "message.threadId", "message.senderId"])
+        .getMany();
+
+      const affectedThreadIds = new Set<string>();
+      const affectedUserIds = new Set<string>();
+
+      for (const row of expiredRecipientRows) {
+        affectedUserIds.add(row.recipientId);
+      }
+
+      if (expiredRecipientRows.length > 0) {
+        const recipientMessages = await this.messageRepo.find({
+          where: {
+            id: In(expiredRecipientRows.map((row) => row.messageId)),
+          },
+          select: ["id", "threadId"],
+        });
+
+        for (const message of recipientMessages) {
+          affectedThreadIds.add(message.threadId);
+        }
+
+        await this.recipientRepo.delete(expiredRecipientRows.map((row) => row.id));
+      }
+
+      for (const message of senderMessages) {
+        affectedThreadIds.add(message.threadId);
+        affectedUserIds.add(message.senderId);
+      }
+
+      if (senderMessages.length > 0) {
+        await this.messageRepo.delete(senderMessages.map((message) => message.id));
+
+        for (const message of senderMessages) {
+          await this.jobsService.enqueueMessageDelete({ messageId: message.id });
+        }
+      }
+
+      for (const threadId of affectedThreadIds) {
+        await this.refreshThreadAfterMutation(this.dataSource.manager, threadId);
+      }
+
+      for (const userId of affectedUserIds) {
+        const threadIds = [...affectedThreadIds];
+        for (const threadId of threadIds) {
+          await this.refreshUserThreadState(this.dataSource.manager, threadId, userId);
+        }
+      }
+
+      return {
+        data: {
+          success: true,
+          recipientDeletes: expiredRecipientRows.length,
+          senderDeletes: senderMessages.length,
+          olderThanDays,
+        },
+      };
+    } catch (error) {
+      this.handleError("purgeExpiredTrash", error);
+    }
+  }
+
+  private emitMailReadEvent(
+    userId: string,
+    messageId: string,
+    threadId: string,
+    readAt: Date | null,
+  ) {
+    this.mailGateway.emitMailRead(userId, {
+      messageId,
+      threadId,
+      isRead: !!readAt,
+      readAt: readAt?.toISOString() ?? null,
+    });
   }
 
   private async resolveThread(
@@ -1384,6 +1546,18 @@ export class MailService {
       (item) => item.recipientId === userId,
     );
     return !!recipient?.isDeleted;
+  }
+
+  private isMessageStarredForUser(message: Message, userId: string) {
+    if (message.senderId === userId) {
+      return false;
+    }
+
+    const recipient = message.recipients?.find(
+      (item) => item.recipientId === userId,
+    );
+
+    return !!recipient && !recipient.isDeleted && recipient.isStarred;
   }
 
   private async refreshThreadMetadata(

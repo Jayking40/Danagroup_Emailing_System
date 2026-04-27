@@ -1,44 +1,220 @@
+import { ConfigService } from "@nestjs/config";
+import { JwtService } from "@nestjs/jwt";
+import { Logger } from "@nestjs/common";
 import {
-  WebSocketGateway,
-  WebSocketServer,
-  SubscribeMessage,
+  ConnectedSocket,
+  MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+  WsException,
 } from "@nestjs/websockets";
 import { Server, Socket } from "socket.io";
+import { USER_STATUS } from "../../jobs/queue.constants";
 
-// TODO: Implement WebSocket Gateway
-// - Namespace: /notifications
-// - Auth: verify JWT from handshake.auth.token on connection
-// - On connect: join room userId
-// - Event 'subscribe': join user-specific room
-// - Method emitNewMail(userId, message): emit 'new_mail' to user room
-// - Method emitNotification(userId, notification): emit 'notification' to user room
+type SocketUser = {
+  userId: string;
+  email?: string;
+  role?: string;
+};
 
-@WebSocketGateway({ cors: { origin: "*" }, namespace: "/notifications" })
+type SubscribePayload = {
+  room?: string;
+};
+
+@WebSocketGateway({
+  cors: { origin: "*" },
+  namespace: "/notifications",
+  pingInterval: 25000,
+  pingTimeout: 20000,
+})
 export class MailGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  handleConnection(client: Socket) {
-    // TODO: Validate JWT from client.handshake.auth.token
-    // TODO: Join room based on userId from JWT
+  private readonly logger = new Logger(MailGateway.name);
+  private readonly presence = new Map<string, Set<string>>();
+
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  async handleConnection(client: Socket) {
+    try {
+      const user = await this.authenticate(client);
+      client.data.user = user;
+
+      const room = this.getUserRoom(user.userId);
+      await client.join(room);
+      this.trackConnection(user.userId, client.id);
+
+      client.emit("system", {
+        type: "system",
+        message: "connected",
+        userId: user.userId,
+      });
+
+      this.emitUserStatus(user.userId, USER_STATUS.ONLINE);
+    } catch (error) {
+      this.logger.warn(
+        `Rejected websocket connection ${client.id}: ${error instanceof Error ? error.message : "Unauthorized"}`,
+      );
+      client.emit("system", {
+        type: "system",
+        message: "authentication_failed",
+        reconnectable: true,
+      });
+      client.disconnect(true);
+    }
   }
 
   handleDisconnect(client: Socket) {
-    // TODO: Clean up
+    const user = client.data.user as SocketUser | undefined;
+    if (!user?.userId) {
+      return;
+    }
+
+    this.untrackConnection(user.userId, client.id);
+
+    if (!this.presence.has(user.userId)) {
+      this.emitUserStatus(user.userId, USER_STATUS.OFFLINE);
+    }
   }
 
   @SubscribeMessage("subscribe")
-  handleSubscribe(client: Socket, payload: { userId: string }) {
-    // TODO: Join user room
+  async handleSubscribe(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: SubscribePayload,
+  ) {
+    const user = this.requireAuthenticatedUser(client);
+    const room = payload?.room?.trim() || this.getUserRoom(user.userId);
+
+    if (room !== this.getUserRoom(user.userId)) {
+      throw new WsException("You can only subscribe to your own room");
+    }
+
+    await client.join(room);
+    return {
+      event: "subscribed",
+      data: { room },
+    };
   }
 
-  emitNewMail(userId: string, payload: any) {
-    this.server.to(userId).emit("new_mail", payload);
+  @SubscribeMessage("ping")
+  handlePing(@ConnectedSocket() client: Socket) {
+    this.requireAuthenticatedUser(client);
+    return {
+      event: "pong",
+      data: { timestamp: new Date().toISOString() },
+    };
   }
 
-  emitNotification(userId: string, payload: any) {
-    this.server.to(userId).emit("notification", payload);
+  emitNewMail(userId: string, payload: Record<string, unknown>) {
+    this.emitEventToUser(userId, "new_mail", payload);
+  }
+
+  emitNotification(userId: string, payload: Record<string, unknown>) {
+    this.emitEventToUser(userId, "notification", payload);
+  }
+
+  emitAnnouncement(userId: string, payload: Record<string, unknown>) {
+    this.emitEventToUser(userId, "announcement", payload);
+  }
+
+  emitSystem(userId: string, payload: Record<string, unknown>) {
+    this.emitEventToUser(userId, "system", payload);
+  }
+
+  emitMailRead(userId: string, payload: Record<string, unknown>) {
+    this.emitEventToUser(userId, "mail_read", payload);
+  }
+
+  emitUserStatus(userId: string, status: string) {
+    this.server.emit("user_status", {
+      userId,
+      status,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  emitEventToUser(
+    userId: string,
+    event: string,
+    payload: Record<string, unknown>,
+  ) {
+    this.server.to(this.getUserRoom(userId)).emit(event, payload);
+  }
+
+  private getUserRoom(userId: string) {
+    return `user:${userId}`;
+  }
+
+  private requireAuthenticatedUser(client: Socket) {
+    const user = client.data.user as SocketUser | undefined;
+    if (!user?.userId) {
+      throw new WsException("Unauthorized");
+    }
+
+    return user;
+  }
+
+  private async authenticate(client: Socket): Promise<SocketUser> {
+    const token = this.extractToken(client);
+    if (!token) {
+      throw new WsException("Missing authentication token");
+    }
+
+    const payload = await this.jwtService.verifyAsync(token, {
+      secret: this.configService.get<string>("JWT_SECRET"),
+    });
+
+    if (!payload?.userId) {
+      throw new WsException("Invalid authentication token");
+    }
+
+    return {
+      userId: payload.userId,
+      email: payload.email,
+      role: payload.role,
+    };
+  }
+
+  private extractToken(client: Socket) {
+    const authToken =
+      typeof client.handshake.auth?.token === "string"
+        ? client.handshake.auth.token
+        : null;
+
+    if (authToken) {
+      return authToken.replace(/^Bearer\s+/i, "");
+    }
+
+    const header = client.handshake.headers.authorization;
+    if (typeof header === "string" && header.trim()) {
+      return header.replace(/^Bearer\s+/i, "");
+    }
+
+    return null;
+  }
+
+  private trackConnection(userId: string, socketId: string) {
+    const sockets = this.presence.get(userId) ?? new Set<string>();
+    sockets.add(socketId);
+    this.presence.set(userId, sockets);
+  }
+
+  private untrackConnection(userId: string, socketId: string) {
+    const sockets = this.presence.get(userId);
+    if (!sockets) {
+      return;
+    }
+
+    sockets.delete(socketId);
+    if (sockets.size === 0) {
+      this.presence.delete(userId);
+    }
   }
 }

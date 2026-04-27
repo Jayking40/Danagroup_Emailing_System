@@ -36,6 +36,6 @@ export class Attachment {
   @JoinColumn()
   message: Message;
 
-  @Column({ type: "uuid" })
-  messageId: string;
+  @Column({ type: "uuid", nullable: true })
+  messageId: string | null;
 }

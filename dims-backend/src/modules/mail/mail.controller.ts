@@ -60,6 +60,15 @@ export class MailController {
     return this.mailService.getDrafts(user.userId, query);
   }
 
+  @Get("starred")
+  @ApiOperation({ summary: "Get starred messages for the current user" })
+  async getStarred(
+    @CurrentUser() user: { userId: string },
+    @Query() query: MailQueryDto,
+  ) {
+    return this.mailService.getFolder(user.userId, "starred", query);
+  }
+
   @Get("thread/:threadId")
   @ApiOperation({ summary: "Get all visible messages in a thread" })
   async getThread(
