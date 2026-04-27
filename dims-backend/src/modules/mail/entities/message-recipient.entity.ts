@@ -20,43 +20,43 @@ export class MessageRecipient {
   type: RecipientType;
 
   @Column({ default: false })
-  is_read: boolean;
+  isRead: boolean;
 
   @Column({ default: false })
-  is_starred: boolean;
+  isStarred: boolean;
 
   @Column({ default: false })
-  is_deleted: boolean;
+  isDeleted: boolean;
 
   @Column({ default: false })
-  is_permanently_deleted: boolean;
+  isPermanentlyDeleted: boolean;
 
   @Column({ nullable: true, type: "timestamptz" })
-  deleted_at: Date;
+  deletedAt: Date;
 
   @Column({ default: false })
-  is_archived: boolean;
+  isArchived: boolean;
 
   @Column({ nullable: true, type: "timestamptz" })
-  read_at: Date;
+  readAt: Date;
 
   @CreateDateColumn({ type: "timestamptz" })
-  created_at: Date;
+  createdAt: Date;
 
   // --- RELATIONSHIPS ---
   @ManyToOne(() => Message, (message) => message.recipients, {
     onDelete: "CASCADE",
   })
-  @JoinColumn({ name: "message_id" })
+  @JoinColumn()
   message: Message;
 
-  @Column({ type: "uuid", name: "message_id" })
-  message_id: string;
+  @Column({ type: "uuid" })
+  messageId: string;
 
   @ManyToOne(() => User)
-  @JoinColumn({ name: "recipient_id" })
+  @JoinColumn()
   recipient: User;
 
-  @Column({ name: "recipient_id", type: "uuid" })
-  recipient_id: string;
+  @Column({ type: "uuid" })
+  recipientId: string;
 }

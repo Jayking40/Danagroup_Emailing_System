@@ -11,7 +11,7 @@ import {
   Req,
   UseInterceptors,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "@common/decorators/current-user.decorator";
 import { MailService } from "./mail.service";
 import { MailQueryDto } from "./dto/mail-query.dto";
@@ -19,6 +19,12 @@ import { SendMailDto } from "./dto/send-mail.dto";
 import { SaveDraftDto } from "./dto/save-draft.dto";
 import { UpdateMessageStatusDto } from "./dto/update-message-status.dto";
 import { CacheInterceptor } from "@nestjs/cache-manager";
+import { SendMailResponseDto } from "./dto/response/send-mail.response.dto";
+
+type SendMailEnvelope = {
+  success: true;
+  data: SendMailResponseDto;
+};
 
 @ApiTags("mail")
 @ApiBearerAuth()
@@ -30,19 +36,19 @@ export class MailController {
   @Get("inbox")
   @ApiOperation({ summary: "Get inbox threads for the current user" })
   async getInbox(
-    @CurrentUser() user: { email: string },
+    @CurrentUser() user: { userId: string },
     @Query() query: MailQueryDto,
   ) {
-    return this.mailService.getFolder(user.email, "inbox", query);
+    return this.mailService.getFolder(user.userId, "inbox", query);
   }
 
   @Get("sent")
   @ApiOperation({ summary: "Get sent messages for the current user" })
   async getSent(
-    @CurrentUser() user: { email: string },
+    @CurrentUser() user: { userId: string },
     @Query() query: MailQueryDto,
   ) {
-    return this.mailService.getFolder(user.email, "sent", query);
+    return this.mailService.getFolder(user.userId, "sent", query);
   }
 
   @Get("drafts")
@@ -57,19 +63,25 @@ export class MailController {
   @Get("thread/:threadId")
   @ApiOperation({ summary: "Get all visible messages in a thread" })
   async getThread(
-    @CurrentUser() user: { email: string },
+    @CurrentUser() user: { userId: string },
     @Param("threadId") threadId: string,
   ) {
-    return this.mailService.getThread(threadId, user.email);
+    return this.mailService.getThread(threadId, user.userId);
   }
 
   @Post("send")
   @ApiOperation({ summary: "Send a new message or send an existing draft" })
+  @ApiResponse({ status: 201, type: SendMailResponseDto})
   async send(
     @CurrentUser() user: { userId: string; email: string },
     @Body() dto: SendMailDto,
-  ) {
-    return this.mailService.send(dto, user.email);
+  ): Promise<SendMailEnvelope> {
+    const data = await this.mailService.send(dto, user.email);
+
+    return {
+      success: true,
+      data,
+    };
   }
 
   @Post("draft")
@@ -92,7 +104,7 @@ export class MailController {
     return this.mailService.markRead(id, user.userId, dto.isRead);
   }
 
-  @Get("messages/:messageId")
+  @Get("messages/:messageId/read")
   @ApiOperation({ summary: "Mark a message as read and return its details" })
   readMessage(
     @Param("messageId") messageId: string,

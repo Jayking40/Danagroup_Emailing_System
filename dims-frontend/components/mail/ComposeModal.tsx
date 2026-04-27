@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, Minimize2, Maximize2, Send, Paperclip, Loader2, Trash2 } from "lucide-react";
+import { useEffect } from "react";
+import { X, Send, Loader2 } from "lucide-react";
 import { useMailStore } from "@/store/mailStore";
 import toast from 'react-hot-toast';
-import { useMail } from '@/hooks/useMail'; // Adjust path to where your useMail hook lives
+import { useMail } from '@/hooks/useMail';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { ComposeInput } from "../ui/Input";
 import { Message } from "@/types/mail.types";
+import type { ComposeData } from "@/types/mail.types";
 
 // TODO: Implement ComposeModal Component
 // - Floating compose modal (Gmail-style, bottom-right)
@@ -23,42 +24,81 @@ import { Message } from "@/types/mail.types";
 // - Forward mode: pre-fills subject with "Fwd:", body with original message
 
 
-interface ComposeFormInput {
-  to: string;
-  cc: string;
-  bcc: string;
-  subject: string;
-  body: string;
-}
+const parseEmailList = (value?: string) =>
+  (value ?? "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
 
-// Helper to validate comma-separated emails
-const emailList = z.string()
-  .transform((val) => val.split(',').map(e => e.trim()).filter(Boolean))
-  .pipe(z.array(z.string().email("Invalid format"))
-);
+const emailListField = (required = false) =>
+  z
+    .string()
+    .default("")
+    .superRefine((value, ctx) => {
+      const emails = parseEmailList(value);
+
+      if (required && emails.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "At least one recipient is required",
+        });
+      }
+
+      const seen = new Set<string>();
+      for (const email of emails) {
+        const result = z.string().email("Invalid email address").safeParse(email);
+        if (!result.success) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Invalid email: ${email}`,
+          });
+        }
+
+        if (seen.has(email)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Duplicate email: ${email}`,
+          });
+        }
+
+        seen.add(email);
+      }
+    });
 
 const composeSchema = z.object({
-  to: emailList,
-  // If empty, transform to empty string first, then to empty array
-  cc: z.string().optional().default("").transform(v => v.split(',').map(e => e.trim()).filter(Boolean)),
-  bcc: z.string().optional().default("").transform(v => v.split(',').map(e => e.trim()).filter(Boolean)),
+  to: emailListField(true),
+  cc: emailListField(),
+  bcc: emailListField(),
   subject: z.string().min(1, "Required"),
   body: z.string().min(1, "Required"),
 });
 
+type ComposeFormInput = z.input<typeof composeSchema>;
+type ComposeFormValues = ComposeFormInput;
 
+const buildBodyHtml = (body: string) => `<p>${body.replace(/\n/g, '<br>')}</p>`;
 
-type ComposeFormValues = z.infer<typeof composeSchema>;
+const mapComposeValuesToPayload = (
+  values: ComposeFormValues,
+  draftId?: string | null,
+): ComposeData => ({
+  draftId: draftId || undefined,
+  toEmails: parseEmailList(values.to),
+  ccEmails: parseEmailList(values.cc),
+  bccEmails: parseEmailList(values.bcc),
+  subject: values.subject,
+  body: values.body,
+  bodyHtml: buildBodyHtml(values.body),
+});
 
 export default function ComposeModal() {
   const { isComposeOpen, closeCompose, composeDraftId } = useMailStore();
-  const { useSaveDraft, useSendMail, useGetMessage, useMarkRead} = useMail()
+  const { useSaveDraft, useSendMail, useGetMessage } = useMail();
 
-  const { data, isLoading } = useGetMessage(composeDraftId || "");
+  const { data } = useGetMessage(composeDraftId || "");
 
   const { mutate: sendEmail, isPending } = useSendMail();
   const { mutateAsync: saveDraft } = useSaveDraft();
-  const [isMaximized, setIsMaximized] = useState(false);
 
   const { getValues, register, handleSubmit, reset, formState: { errors } } = useForm<ComposeFormInput>({
     resolver: zodResolver(composeSchema),
@@ -74,7 +114,7 @@ export default function ComposeModal() {
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [isComposeOpen]);
+  }, [isComposeOpen, composeDraftId, draftData]);
 
   // Inside your useEffect in ComposeModal
   useEffect(() => {
@@ -119,17 +159,17 @@ export default function ComposeModal() {
   const handleCloseAndSaveDraft = async () => {
     const values = getValues();
     // Check if there is anything worth saving
-    const hasContent = values.to || values.subject || values.body;
+    const hasContent = values.to || values.cc || values.bcc || values.subject || values.body;
 
     if (hasContent) {
-      const draftPayload = {
+      const draftPayload: ComposeData = {
         draftId: composeDraftId || undefined,
-        toEmails: values.to ? values.to.split(',').map(e => e.trim()).filter(Boolean) : [],
-        ccEmails: values.cc ? values.cc.split(',').map(e => e.trim()).filter(Boolean) : [],
-        bccEmails: values.bcc ? values.bcc.split(',').map(e => e.trim()).filter(Boolean) : [],
+        toEmails: parseEmailList(values.to),
+        ccEmails: parseEmailList(values.cc),
+        bccEmails: parseEmailList(values.bcc),
         subject: values.subject || "(No Subject)",
         body: values.body || "",
-        bodyHtml: `<p>${(values.body || "").replace(/\n/g, '<br>')}</p>`,
+        bodyHtml: buildBodyHtml(values.body || ""),
         isDraft: true,
       };
 
@@ -150,20 +190,8 @@ export default function ComposeModal() {
 
   // Transformation Logic
   // Change 'data: ComposeFormValues' to 'data: any'
-  const onSubmit = (data: any) => {
-    // At this point, Zod has already transformed strings to arrays
-    const validatedData = data as ComposeFormValues; 
-
-    const payload = {
-      draftId: composeDraftId || undefined,
-      toEmails: validatedData.to,
-      ccEmails: validatedData.cc.length > 0 ? validatedData.cc : undefined,
-      bccEmails: validatedData.bcc.length > 0 ? validatedData.bcc : undefined,
-      subject: validatedData.subject,
-      body: validatedData.body,
-      bodyHtml: `<p>${validatedData.body.replace(/\n/g, '<br>')}</p>`,
-      // threadId and draftId can be added here if in reply/draft mode
-    };
+  const onSubmit = (data: ComposeFormValues) => {
+    const payload = mapComposeValuesToPayload(data, composeDraftId);
 
     sendEmail(payload, {
       onSuccess: () => {
@@ -248,6 +276,7 @@ export default function ComposeModal() {
               placeholder="Write your message..."
               className="w-full flex-1 resize-none p-4 text-sm text-gray-700 outline-none"
             />
+            {errors.body && <span className="text-xs text-red-500 px-1">{errors.body.message}</span>}
               
           </div>
           

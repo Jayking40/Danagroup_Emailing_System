@@ -6,12 +6,15 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  Index,
 } from "typeorm";
 import { Thread } from "./thread.entity";
 import { User } from "@modules/users/entities/user.entity";
 import { MessageRecipient } from "./message-recipient.entity";
 import { Attachment } from "@modules/files/entities/attachment.entity";
 
+
+@Index(['threadId', 'sentAt'])
 @Entity("messages")
 export class Message {
   @PrimaryGeneratedColumn("uuid")
@@ -33,23 +36,23 @@ export class Message {
   bodyHtml: string;
 
   @Column({ default: false })
-  is_draft: boolean;
+  isDraft: boolean;
 
   @Column({ nullable: true, type: "timestamptz" })
   sentAt: Date;
 
   @Column({ nullable: true, type: "timestamptz" })
-  sender_deleted_at: Date;
+  senderDeletedAt: Date;
 
   @CreateDateColumn({ type: "timestamptz", default: () => "CURRENT_TIMESTAMP" })
   createdAt: Date;
 
   @ManyToOne(() => Thread, (thread) => thread.messages)
-  @JoinColumn({ name: "thread_id" })
+  @JoinColumn()
   thread: Thread;
 
   @ManyToOne(() => User)
-  @JoinColumn({ name: "sender_id" })
+  @JoinColumn()
   sender: User;
 
   @OneToMany(() => MessageRecipient, (recipient) => recipient.message)

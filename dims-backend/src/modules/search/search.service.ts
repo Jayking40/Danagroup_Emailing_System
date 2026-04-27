@@ -137,8 +137,8 @@ export class SearchService {
         // Use optional chaining because these might be null in the DB
         department: user.department?.name || null,
         subsidiary: user.subsidiary?.name || null,
-        department_id: user.department_id, // Keep IDs too, just in case
-        subsidiary_id: user.subsidiary_id,
+        departmentId: user.departmentId, // Keep IDs too, just in case
+        subsidiaryId: user.subsidiaryId,
       },
     ]);
 
@@ -204,19 +204,26 @@ export class SearchService {
   // TODO: Implement indexMessage(message): void
   //   - Index in 'dims-messages' index: id, subject, body, senderId, recipientIds, sentAt
   async indexMessage(message: any) {
-    // Use your Message Entity type here
-    return this.es.index<MessageSearchBody>({
-      index: this.MESSAGE_INDEX,
-      id: message.id,
-      document: {
+    try {
+      return await this.es.index<MessageSearchBody>({
+        index: this.MESSAGE_INDEX,
         id: message.id,
-        subject: message.subject,
-        body: message.body,
-        senderId: message.senderId,
-        recipientIds: message.recipients?.map((r) => r.recipient_id) || [],
-        sentAt: message.sentAt || new Date(),
-      },
-    });
+        document: {
+          id: message.id,
+          subject: message.subject,
+          body: message.body,
+          senderId: message.senderId,
+          recipientIds:
+            message.recipients?.map((r: any) => r.recipientId || r.id) || [],
+          sentAt: message.sentAt || new Date(),
+        },
+      });
+    } catch (error: any) {
+      this.logger.warn(
+        `indexMessage(${message?.id}) skipped: [${error?.name ?? "Error"}] ${error?.message || "(no message)"}`,
+      );
+      return null;
+    }
   }
 
   // TODO: Implement indexUser(user): void
@@ -233,8 +240,8 @@ export class SearchService {
         subsidiary: user.subsidiary?.name || null,
 
         // Store the IDs for filtering/exact matches
-        department_id: user.department_id || user.department?.id,
-        subsidiary_id: user.subsidiary_id || user.subsidiary?.id,
+        departmentId: user.departmentId || user.department?.id,
+        subsidiaryId: user.subsidiaryId || user.subsidiary?.id,
         role: user.role,
         isActive: user.isActive,
         avatarUrl: user.avatarUrl,

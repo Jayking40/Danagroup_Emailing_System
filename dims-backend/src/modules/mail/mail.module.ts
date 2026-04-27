@@ -7,6 +7,7 @@ import { MailGateway } from "./mail.gateway";
 import { Message } from "./entities/message.entity";
 import { Thread } from "./entities/thread.entity";
 import { MessageRecipient } from "./entities/message-recipient.entity";
+import { UserThreadState } from "./entities/UserThreadState.entity";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { User } from "../users/entities/user.entity";
 import { Attachment } from "../files/entities/attachment.entity";
@@ -20,6 +21,7 @@ import { UsersModule } from "@modules/users/users.module";
       Message,
       Thread,
       MessageRecipient,
+      UserThreadState,
       User,
       Attachment,
     ]),

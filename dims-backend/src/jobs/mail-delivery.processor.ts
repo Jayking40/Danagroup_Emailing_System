@@ -38,7 +38,7 @@ export class MailDeliveryProcessor extends WorkerHost {
 
     const recipients = await this.recipientRepo.find({
       where: {
-        message_id: messageId,
+        messageId: messageId,
       },
     });
 
@@ -48,7 +48,7 @@ export class MailDeliveryProcessor extends WorkerHost {
         .join(" ");
 
       await this.notificationsService.create(
-        recipient.recipient_id,
+        recipient.recipientId,
         "new_mail",
         `New mail from ${senderName || "Unknown sender"}`,
         message.subject,

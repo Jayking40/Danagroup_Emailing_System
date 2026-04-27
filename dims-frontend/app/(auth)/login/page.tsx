@@ -194,6 +194,33 @@ export default function LoginPage() {
             </div>
           </form>
         </div>
+
+        {/* boxes */}
+
+        <div className="absolute top-[4vh] left-[2vw] h-24 w-24 rounded bg-gradient-to-br from-red-600 via-blue-800 to-blue-400 p-[7px]">
+          <div className="h-full w-full rounded bg-white"></div>
+        </div>
+
+
+        <div className="absolute top-[23vw] right-[0vw] ">
+
+          <div className="">
+            <div className="absolute z-10 right-[5vw] -bottom-[5vh] h-16 w-16 rounded bg-gradient-to-br from-red-600 via-blue-800 to-blue-400 p-[4px]">
+              <div className="h-full w-full rounded-sm bg-white"></div>
+            </div>
+
+            <div className="absolute top-0 right-4 h-20 w-20 rounded bg-gradient-to-br from-red-600 via-blue-800 to-blue-400 p-[4px]">
+              <div className="h-full w-full rounded-sm"></div>
+            </div>
+          </div>
+
+        </div>
+
+
+        <div className="absolute bottom-[4vh] left-[4vw] h-24 w-24 rounded bg-gradient-to-br from-red-600 via-blue-800 to-blue-400 p-[8px]">
+          <div className="h-full w-full rounded bg-white"></div>
+        </div>
+        
       </div>
     </section>
   );

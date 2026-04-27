@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { Reply, Forward, Star, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
 import { useMail } from "@/hooks/useMail";
-import { InboxMessage, Message } from "@/types/mail.types";
+import { Message } from "@/types/mail.types";
 
 import { useAuthStore } from "@/store/authStore";
 import { htmlToText } from "@/lib/utils";
@@ -20,13 +20,6 @@ import { htmlToText } from "@/lib/utils";
 // - Attachment list shown below body (AttachmentList component)
 // - Action buttons: Reply, Forward, Star, Delete (shown on hover)
 // - Marks message as read on expand (PATCH /api/mail/:id/read)
-
-interface Attachment {
-  id: string;
-  name: string;
-  size: number;
-  url: string;
-}
 
 export default function MailMessage({ 
   message, 
@@ -43,32 +36,32 @@ export default function MailMessage({
   const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
 
   const myRecipient = message.recipients.find(
-  (r) => r.recipient.email === user?.email
-);
+    (r) => r.recipient?.email === user?.email
+  );
   // Marks message as read on expand (PATCH /api/mail/:id/read)
   useEffect(() => {
     const canMarkRead = 
       !isCollapsed && 
       message.id && 
-      !message.is_draft && 
-      message.senderId !== user?.id && 
+      !message.isDraft && 
+      message.sender?.id !== user?.id && 
       myRecipient && 
-      myRecipient.is_read === false;
+      myRecipient.isRead === false;
 
     if (canMarkRead) {
       // Pass the message.id to the mutation
       markRead.mutate(message.id);
     }
-  }, [isCollapsed, message.id, myRecipient?.is_read]);
+  }, [isCollapsed, markRead, message.id, message.isDraft, message.sender?.id, myRecipient, user?.id]);
 
   //console.log(message)
 
-  const isUnread = myRecipient?.is_read === false;
+  const isUnread = myRecipient?.isRead === false;
 
   const sanitizedBody = DOMPurify.sanitize(message.bodyHtml || message.body);
   
-
-  const fullName = message.sender.firstName + " " + message.sender.lastName
+  const fullName = message.sender?.name || message.sender?.email || "Unknown sender";
+  const senderEmail = message.sender?.email || "unknown@danagroup.internal";
 
   return (
     <div className={`group border-b border-border bg-background transition-all ${!isCollapsed ? "pb-6" : ""}`}>
@@ -105,8 +98,8 @@ export default function MailMessage({
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-[]">
             <button className="p-1.5 hover:bg-muted rounded" title="Reply"><Reply className="h-4 w-4" /></button>
             <button className="p-1.5 hover:bg-muted rounded" title="Forward"><Forward className="h-4 w-4" /></button>
-            <button className={`p-1.5 hover:bg-muted rounded ${myRecipient?.is_starred === true ? "text-amber-400" : ""}`} title="Star">
-              <Star className={`h-4 w-4 ${myRecipient?.is_starred === true ? "fill-current" : ""}`} />
+            <button className={`p-1.5 hover:bg-muted rounded ${myRecipient?.isStarred === true ? "text-amber-400" : ""}`} title="Star">
+              <Star className={`h-4 w-4 ${myRecipient?.isStarred === true ? "fill-current" : ""}`} />
             </button>
             <button className="p-1.5 hover:bg-muted rounded text-destructive" title="Delete"><Trash2 className="h-4 w-4" /></button>
           </div>
@@ -117,7 +110,7 @@ export default function MailMessage({
       {!isCollapsed && (
         <div className="px-11 animate-in fade-in slide-in-from-top-1 duration-200">
           <div className="mb-6 flex flex-col text-xs text-muted-foreground">
-            <span>From: <b className="text-foreground">{fullName}</b> &lt;{message.sender.email}&gt;</span>
+            <span>From: <b className="text-foreground">{fullName}</b> &lt;{senderEmail}&gt;</span>
             <span>Date: {format(new Date(message.createdAt), "PPPP 'at' p")}</span>
           </div>
 

@@ -1,31 +1,6 @@
-import { number } from "zod";
 import type { User } from "./user.types";
 
 export type RecipientType = "to" | "cc" | "bcc";
-
-export interface Thread {
-  id: string;
-  subject: string;
-  createdAt: string;
-  updatedAt: string;
-  messages?: Message[];
-  lastMessage?: Message;
-  unreadCount?: number;
-  isStarred?: boolean;
-}
-
-export interface MessageRecipient {
-  id: string;
-  messageId: string;
-  recipientId: string;
-  recipient?: User;
-  type: RecipientType;
-  isRead: boolean;
-  isStarred: boolean;
-  isDeleted: boolean;
-  isArchived: boolean;
-  readAt?: string;
-}
 
 export interface Attachment {
   id: string;
@@ -34,59 +9,107 @@ export interface Attachment {
   mimeType: string;
   sizeBytes: number;
   storageKey: string;
-  createdAt: string;
+  createdAt?: string;
 }
 
-export interface Message {
+export interface SenderSummary {
+  id: string;
+  email: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  avatarUrl?: string | null;
+}
+
+export interface ParticipantSummary {
+  id: string;
+  email: string;
+  name: string;
+  avatarUrl?: string | null;
+}
+
+export interface MessageRecipient {
+  id: string;
+  type: RecipientType;
+  recipientId: string;
+  isRead: boolean;
+  isStarred: boolean;
+  isDeleted: boolean;
+  isArchived?: boolean;
+  readAt?: string | null;
+  deletedAt?: string | null;
+  recipient?: ParticipantSummary;
+}
+
+export interface MailListMessage {
   id: string;
   threadId: string;
-  thread?: Thread;
-  senderId: string;
-  sender: User;
+  body: string;
+  bodyHtml?: string | null;
+  createdAt: string;
+  sentAt?: string | null;
+  sender: SenderSummary | null;
+  recipients?: MessageRecipient[];
+}
+
+export interface ThreadMessage {
+  id: string;
+  threadId: string;
   subject: string;
   body: string;
-  bodyHtml?: string;
-  is_draft: boolean; // Matches your DB snake_case
-  sentAt?: string;
+  bodyHtml?: string | null;
+  isDraft: boolean;
+  sentAt?: string | null;
   createdAt: string;
-  recipients: {
-    type: 'to' | 'cc' | 'bcc';
-    is_read: boolean; 
-    is_starred: boolean;
-    recipient_id: string; // The UUID of the recipient
-    recipient: {
-      id: string;
-      email: string;
-    };
-  }[];
-  attachments?: Attachment[];
-  // Note: latestMessage is usually part of a Thread, 
-  // but if it's on Message, it's recursive
-  // latestMessage?: Message; 
+  senderDeletedAt?: string | null;
+  sender: ParticipantSummary | null;
+  recipients: MessageRecipient[];
+  attachments: Attachment[];
+  isRead: boolean;
+  isStarred: boolean;
+  preview: string;
 }
 
-
-export interface InboxMessage {
+export interface MailThreadSummary {
   id: string;
   subject: string;
-  latestMessage: Message;
-  unreadCount?: number;
-  message?: Message;
+  unreadCount: number;
+  latestMessage: MailListMessage | null;
 }
 
-// export interface ComposeData {
-//   subject: string;
-//   body: string;
-//   bodyHtml?: string;
-//   attachmentIds?: string[];
-//   threadId?: string;
-//   draftId?: string;
-//   isDraft?: boolean;
-//   recipients: {
-//     email: string;
-//     type: 'to' | 'cc' | 'bcc';
-//   } [];
-// }
+export interface ThreadDetail {
+  threadId: string;
+  messages: ThreadMessage[];
+}
+
+export interface DraftMessage {
+  id: string;
+  threadId: string;
+  subject: string;
+  body: string;
+  bodyHtml?: string | null;
+  isDraft: boolean;
+  createdAt: string;
+  sentAt?: string | null;
+  sender?: SenderSummary | null;
+  recipients: MessageRecipient[];
+  attachments: Attachment[];
+}
+
+export interface Thread {
+  id: string;
+  subject: string;
+  createdAt: string;
+  updatedAt: string;
+  messages?: ThreadMessage[];
+  lastMessage?: ThreadMessage;
+  unreadCount?: number;
+  isStarred?: boolean;
+}
+
+export type Message = ThreadMessage;
+export type SentMail = MailThreadSummary;
+export type InboxMessage = MailThreadSummary;
 
 export interface ComposeFormState {
   to: string[];
@@ -104,12 +127,10 @@ export interface ComposeData {
   threadId?: string;
   draftId?: string;
   isDraft?: boolean;
-  toEmails?: string[]; 
-  ccEmails?: string[]; 
+  toEmails?: string[];
+  ccEmails?: string[];
   bccEmails?: string[];
 }
-
-
 
 export interface Announcement {
   id: string;
@@ -125,16 +146,18 @@ export interface Announcement {
   createdAt: string;
 }
 
+export type MailFolder =
+  | "inbox"
+  | "sent"
+  | "drafts"
+  | "trash";
 
-export type MailFolder = 'inbox' | 'sent' | 'drafts' | 'starred' | 'spam' | 'trash' | 'all';
-
-export type MailLabel = 'important' | 'work' | 'personal';
-
+export type MailLabel = "important" | "work" | "personal";
 
 export interface MailListItem {
-  id: string; // Thread ID
+  id: string;
   subject: string;
   unreadCount: number;
-  updatedAt: string;
-  latestMessage: Message; // The full message object with sender, body, etc.
+  updatedAt?: string;
+  latestMessage: MailListMessage | null;
 }

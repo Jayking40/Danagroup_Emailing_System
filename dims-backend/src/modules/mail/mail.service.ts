@@ -10,22 +10,33 @@ import {
 import { InjectQueue } from "@nestjs/bullmq";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Queue } from "bullmq";
-import { Brackets, In, IsNull, Repository, SelectQueryBuilder } from "typeorm";
+import {
+  Brackets,
+  DataSource,
+  EntityManager,
+  In,
+  Repository,
+  SelectQueryBuilder,
+} from "typeorm";
 import { Attachment } from "../files/entities/attachment.entity";
 import { User } from "../users/entities/user.entity";
 import { MailQueryDto } from "./dto/mail-query.dto";
 import { SaveDraftDto } from "./dto/save-draft.dto";
 import { SendMailDto } from "./dto/send-mail.dto";
+import { SendMailResponseDto } from "./dto/response/send-mail.response.dto";
 import {
   MessageRecipient,
   RecipientType,
 } from "./entities/message-recipient.entity";
 import { Message } from "./entities/message.entity";
 import { Thread } from "./entities/thread.entity";
-import { DataSource } from "typeorm";
-import { EntityManager } from "typeorm";
+import { UserThreadState } from "./entities/UserThreadState.entity";
 import { SearchService } from "@modules/search/search.service";
 import { UsersService } from "@modules/users/users.service";
+import { DraftMapper } from "./mappers/draft.mapper";
+import { InboxMapper } from "./mappers/inbox.mapper";
+import { MailMapper } from "./mappers/mail.mapper";
+import { SentMapper } from "./mappers/sent.mapper";
 
 type MailboxResponse<T> = {
   data: T[];
@@ -35,9 +46,11 @@ type MailboxResponse<T> = {
 };
 
 type RecipientInput = {
-  recipient_id: string;
+  recipientId: string;
   type: RecipientType;
 };
+
+type ThreadFolder = "inbox" | "sent" | "trash";
 
 @Injectable()
 export class MailService {
@@ -51,6 +64,8 @@ export class MailService {
     private readonly threadRepo: Repository<Thread>,
     @InjectRepository(MessageRecipient)
     private readonly recipientRepo: Repository<MessageRecipient>,
+    @InjectRepository(UserThreadState)
+    private readonly userThreadStateRepo: Repository<UserThreadState>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @InjectRepository(Attachment)
@@ -64,91 +79,227 @@ export class MailService {
 
   private handleError(method: string, error: any) {
     // Do not mask NestJS known exceptions (BadRequestException, etc.)
-    console.error(`❌ MailService.${method} failed:`, {
+    console.error(`MailService.${method} failed:`, {
       message: error.message,
       stack: error.stack,
     });
     throw error;
   }
 
-  private async paginateThreads(
+  private normalizePagination(query: MailQueryDto) {
+    return {
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+    };
+  }
+
+  private isUuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    );
+  }
+
+  private async resolveUserId(userIdentifier: string) {
+    if (this.isUuid(userIdentifier)) {
+      return userIdentifier;
+    }
+
+    const user = await this.userService.findByEmail(userIdentifier);
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    return user.id;
+  }
+
+  private buildCursorPagination(
+    qb: SelectQueryBuilder<Thread>,
+    cursor?: string,
+    limit = 20,
+  ) {
+    if (cursor) {
+      qb.andWhere(
+        "COALESCE(thread.last_message_at, thread.last_activity_at) < :cursor",
+        { cursor },
+      );
+    }
+
+    return qb.take(limit);
+  }
+
+  private async countDistinctThreads(baseQuery: SelectQueryBuilder<Thread>) {
+    const totalResult = await baseQuery
+      .clone()
+      .select("COUNT(DISTINCT thread.id)", "count")
+      .getRawOne<{ count: string }>();
+
+    return Number(totalResult?.count ?? 0);
+  }
+
+  private applyThreadRelations(
+    qb: SelectQueryBuilder<Thread>,
+    userId: string,
+  ) {
+    return qb
+      .leftJoinAndSelect("thread.messages", "threadMessage")
+      // 1. Use leftJoin instead of leftJoinAndSelect for the sender
+      .leftJoin("threadMessage.sender", "threadMessageSender")
+      // 2. Explicitly select only the columns you need (excluding 'sessions')
+      .addSelect([
+        "threadMessageSender.id",
+        "threadMessageSender.email",
+        "threadMessageSender.firstName",
+        "threadMessageSender.lastName",
+        "threadMessageSender.role",
+        "threadMessageSender.avatarUrl",
+      ])
+      .leftJoinAndSelect("threadMessage.recipients", "threadMessageRecipient")
+      .leftJoinAndSelect(
+        "thread.userStates",
+        "threadUserState",
+        "threadUserState.userId = :userId",
+        { userId },
+      );
+  }
+
+
+  private compareMessages(
+    left: Message,
+    right: Message,
+    direction: "ASC" | "DESC" = "DESC",
+  ) {
+    const leftDate = left.sentAt ?? left.createdAt;
+    const rightDate = right.sentAt ?? right.createdAt;
+    const diff = leftDate.getTime() - rightDate.getTime();
+    return direction === "ASC" ? diff : -diff;
+  }
+
+  private prepareThreads(
+    threads: Thread[],
+    userId: string,
+    mode: "visible" | "trash" = "visible",
+  ) {
+    return threads
+      .map((thread) => {
+        const messages = (thread.messages ?? [])
+          .filter((message) =>
+            mode === "trash"
+              ? this.isMessageInTrashForUser(message, userId)
+              : this.isMessageVisibleToUser(message, userId),
+          )
+          .sort((left, right) => this.compareMessages(left, right));
+
+        thread.messages = messages;
+        (thread as Thread & { userState?: UserThreadState | null }).userState =
+          MailMapper.getUserState(thread, userId);
+
+        return thread;
+      })
+      .filter((thread) => thread.messages.length > 0);
+  }
+
+  private async buildMailboxResponse(
     baseQuery: SelectQueryBuilder<Thread>,
     userId: string,
     page: number,
     limit: number,
+    folder: ThreadFolder,
   ) {
-    try {
-      // 1. Get total count using a cloned query to avoid side effects
-      const totalResult = await baseQuery
-        .clone()
-        .select("COUNT(DISTINCT thread.id)", "count")
-        .getRawOne<{ count: string }>();
+    const total = await this.countDistinctThreads(baseQuery);
 
-      const total = Number(totalResult?.count || 0);
+    // Use the clone to avoid polluting the baseQuery logic
+    const qb = this.applyThreadRelations(baseQuery.clone(), userId);
+    const rows = await qb
+      .addSelect('COALESCE(thread.last_message_at, thread.last_activity_at)', 'thread_sort_date')
+      .distinct(true)
+      .setParameter('userId', userId) 
+      .orderBy('thread_sort_date', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getMany();
 
-      // 2. Prepare the rows query
-      const rowsQuery = baseQuery.clone();
+    const threads = this.prepareThreads(
+      rows,
+      userId,
+      folder === "trash" ? "trash" : "visible",
+    );
 
-      // Check if 'message' alias already exists to prevent "table name specified more than once"
-      const hasMessageAlias = rowsQuery.expressionMap.joinAttributes.some(
-        (join) => join.alias.name === "message",
+    const data =
+      folder === "inbox"
+        ? InboxMapper.toResponse(threads, userId)
+        : folder === "sent"
+          ? SentMapper.toResponse(threads, userId)
+          : InboxMapper.toResponse(threads, userId);
+
+    return {
+      data,
+      total,
+      page,
+      lastPage: total === 0 ? 1 : Math.ceil(total / limit),
+    };
+  }
+
+  private getInboxBaseQuery(userId: string) {
+    return this.threadRepo
+      .createQueryBuilder("thread")
+      .innerJoin(
+        "thread.messages",
+        "filterMessage",
+        "filterMessage.isDraft = false",
+      )
+      .innerJoin(
+        "filterMessage.recipients",
+        "filterRecipient",
+        "filterRecipient.recipientId = :userId AND filterRecipient.isDeleted = false",
+        { userId },
       );
+  }
 
-      if (!hasMessageAlias) {
-        rowsQuery.leftJoin("thread.messages", "message");
-      }
 
-      // 3. Execute the paginated query
-      const rows = await rowsQuery
-        .leftJoin(
-          "message.recipients",
-          "unread_recipient", // We changed this from "recipient"
-          "unread_recipient.recipient_id = :userId",
-          { userId },
-        )
-        .select([
-          "thread.id AS id",
-          "thread.subject AS subject",
-          "thread.last_activity_at AS lastActivityAt",
-        ])
-        .addSelect(
-          // We update the COUNT to use the new alias "unread_recipient"
-          "COUNT(DISTINCT CASE WHEN unread_recipient.is_read = false THEN message.id END)",
-          "unreadCount",
-        )
-        .groupBy("thread.id")
-        .addGroupBy("thread.subject")
-        .addGroupBy("thread.last_activity_at")
-        .orderBy("thread.last_activity_at", "DESC")
-        .offset((page - 1) * limit)
-        .limit(limit)
-        .getRawMany();
-
-      // 4. Fetch the latest messages for the current page of threads
-      const threadIds = rows.map((r) => r.id);
-      const latestMessages = threadIds.length
-        ? await this.getLatestMessagesByThread(threadIds, userId)
-        : [];
-
-      const latestByThread = new Map(
-        latestMessages.map((m) => [m.threadId, m]),
+  private getSentBaseQuery(userId: string) {
+    return this.threadRepo
+      .createQueryBuilder("thread")
+      .innerJoin(
+        "thread.messages",
+        "filterMessage",
+        "filterMessage.senderId = :userId AND filterMessage.isDraft = false AND filterMessage.senderDeletedAt IS NULL",
+        { userId },
       );
+  }
 
-      // 5. Map results to final DTO structure
-      return {
-        data: rows.map((row) => ({
-          id: row.id,
-          subject: row.subject,
-          lastActivityAt: row.lastActivityAt,
-          unreadCount: Number(row.unreadCount || 0),
-          latestMessage: latestByThread.get(row.id) ?? null,
-        })),
-        total,
-        page,
-        lastPage: Math.ceil(total / limit) || 1,
-      };
-    } catch (error) {
-      this.handleError("paginateThreads", error);
+  private getTrashBaseQuery(userId: string) {
+    return this.threadRepo
+      .createQueryBuilder("thread")
+      .innerJoin("thread.messages", "filterMessage")
+      .leftJoin(
+        "filterMessage.recipients",
+        "filterRecipient",
+        "filterRecipient.recipientId = :userId",
+        { userId },
+      )
+      .where(
+        new Brackets((qb) => {
+          qb.where(
+            "filterMessage.senderId = :userId AND filterMessage.senderDeletedAt IS NOT NULL",
+            { userId },
+          ).orWhere(
+            "filterRecipient.recipientId = :userId AND filterRecipient.isDeleted = true",
+            { userId },
+          );
+        }),
+      );
+  }
+
+  private async getThreadsByMailbox(
+    type: "inbox" | "sent",
+    userId: string,
+    cursor?: string,
+  ) {
+    switch (type) {
+      case "inbox":
+        return this.getInboxThreadsOptimized(userId, cursor);
+      case "sent":
+        return this.getSentThreadsOptimized(userId, cursor);
     }
   }
 
@@ -157,11 +308,11 @@ export class MailService {
       return await this.messageRepo
         .createQueryBuilder("message")
         .leftJoin("message.recipients", "recipient")
-        .where("message.is_draft = false")
+        .where("message.isDraft = false")
         .andWhere(
           new Brackets((qb) => {
             qb.where("message.senderId = :userId", { userId }).orWhere(
-              "recipient.recipient_id = :userId",
+              "recipient.recipientId = :userId",
               { userId },
             );
           }),
@@ -175,7 +326,7 @@ export class MailService {
             });
           }),
         )
-        .distinct(true) // ✅ FIX duplicate results
+        .distinct(true)
         .orderBy("message.sentAt", "DESC")
         .take(limit)
         .getMany();
@@ -184,44 +335,53 @@ export class MailService {
     }
   }
 
-  async getInbox(userEmail: string, query: MailQueryDto) {
+  async getInboxThreadsOptimized(userId: string, cursor?: string, limit = 20) {
     try {
-      const user = await this.userService.findByEmail(userEmail);
-      if (!user) throw new NotFoundException("User not found");
+      const qb = this.applyThreadRelations(this.getInboxBaseQuery(userId), userId)
+        .distinct(true)
+        .addSelect("COALESCE(thread.lastMessageAt, thread.lastActivityAt)", "thread_activity")
+        .orderBy("thread_activity", "DESC");
 
-      const { page, limit } = this.normalizePagination(query);
+      this.buildCursorPagination(qb, cursor, limit);
 
-      const baseQuery = this.threadRepo
-        .createQueryBuilder("thread")
-        .innerJoin("thread.messages", "message")
-        .innerJoin("message.recipients", "recipient")
-        .where("recipient.recipient_id = :userId", { userId: user.id })
-        .andWhere("recipient.deleted_at IS NULL")
-        .andWhere("message.is_draft = false");
-
-      return this.paginateThreads(baseQuery, user.id, page, limit);
+      const threads = await qb.getMany();
+      return this.prepareThreads(threads, userId);
     } catch (error) {
-      this.handleError("getInbox", error);
+      this.handleError("getInboxThreadsOptimized", error);
     }
+  }
+
+  async getSentThreadsOptimized(userId: string, cursor?: string, limit = 20) {
+    try {
+      const qb = this.applyThreadRelations(this.getSentBaseQuery(userId), userId)
+        .distinct(true)
+        .orderBy("COALESCE(thread.lastMessageAt, thread.lastActivityAt)", "DESC");
+
+      this.buildCursorPagination(qb, cursor, limit);
+
+      const threads = await qb.getMany();
+      return this.prepareThreads(threads, userId);
+    } catch (error) {
+      this.handleError("getSentThreadsOptimized", error);
+    }
+  }
+
+  async getInbox(userId: string, cursor?: string) {
+    const threads = await this.getInboxThreadsOptimized(userId, cursor);
+    const mappedThreads = InboxMapper.toResponse(threads ?? [], userId);
+    const nextCursor =
+      threads && threads.length > 0
+        ? (threads[threads.length - 1].lastMessageAt ??
+          threads[threads.length - 1].lastActivityAt)
+        : null;
+
+    return { threads: mappedThreads, nextCursor };
   }
 
   async getSent(userEmail: string, query: MailQueryDto) {
     try {
-      // 1. RESOLVE EMAIL TO UUID HERE
-      const user = await this.userService.findByEmail(userEmail);
-      if (!user) throw new NotFoundException("User not found");
-      const userId = user.id; // This is the UUID
-
-      // 2. BUILD THE QUERY USING THE UUID
-      const baseQuery = this.threadRepo
-        .createQueryBuilder("thread")
-        .innerJoin("thread.messages", "message")
-        .where("message.senderId = :userId", { userId }) // Use UUID here
-        .andWhere("message.is_draft = false")
-        .andWhere("message.sender_deleted_at IS NULL");
-
-      // 3. PASS THE UUID (userId), NOT THE EMAIL
-      return this.paginateThreads(baseQuery, userId, query.page, query.limit);
+      const userId = await this.resolveUserId(userEmail);
+      return this.getFolder(userId, "sent", query);
     } catch (error) {
       this.handleError("getSent", error);
     }
@@ -230,18 +390,19 @@ export class MailService {
   async getDrafts(
     userId: string,
     query: MailQueryDto,
-  ): Promise<MailboxResponse<Message>> {
+  ): Promise<MailboxResponse<any>> {
     try {
       const { page, limit } = this.normalizePagination(query);
 
       const [data, total] = await this.messageRepo.findAndCount({
         where: {
           senderId: userId,
-          is_draft: true,
-          sender_deleted_at: null,
+          isDraft: true,
+          senderDeletedAt: null,
         },
         relations: {
           thread: true,
+          sender: true,
           recipients: {
             recipient: true,
           },
@@ -255,7 +416,7 @@ export class MailService {
       });
 
       return {
-        data,
+        data: DraftMapper.toResponse(data, userId),
         total,
         page,
         lastPage: total === 0 ? 1 : Math.ceil(total / limit),
@@ -267,157 +428,142 @@ export class MailService {
 
   async getThread(threadId: string, userId: string) {
     try {
-      await this.ensureThreadAccess(threadId, userId);
-
-      const messages = await this.messageRepo.find({
-        where: { threadId },
-        relations: {
-          sender: true,
-          recipients: {
-            recipient: true,
-          },
-          attachments: true,
-          thread: true,
-        },
-        order: {
-          createdAt: "ASC",
-        },
-      });
+      const visibleMessages = await this.getVisibleThreadMessages(threadId, userId);
 
       return {
-        data: {
-          threadId,
-          messages: messages.filter((message) =>
-            this.isMessageVisibleToUser(message, userId),
-          ),
-        },
+        data: MailMapper.toThreadDetail(threadId, visibleMessages, userId),
       };
     } catch (error) {
       this.handleError("getThread", error);
     }
   }
 
-  async getFolder(userEmail: string, folder: string, query: MailQueryDto) {
-    const user = await this.userService.findByEmail(userEmail);
-    if (!user) throw new NotFoundException("User not found");
-    const userId = user.id; // Correct UUID
-    const { page, limit } = this.normalizePagination(query);
+  async getFolder(userIdentifier: string, folder: string, query: MailQueryDto) {
+    try {
+      const userId = await this.resolveUserId(userIdentifier);
+      const { page, limit } = this.normalizePagination(query);
 
-    const baseQuery = this.threadRepo
-      .createQueryBuilder("thread")
-      .innerJoin("thread.messages", "message");
-
-    // Add specific folder filters
-    if (folder === "sent") {
-      // For SENT: You are the SENDER
-      baseQuery
-        .where("message.senderId = :userId", { userId })
-        .andWhere("message.is_draft = false")
-        .andWhere("message.sender_deleted_at IS NULL");
-    } else if (folder === "drafts") {
-      // For DRAFTS: You are the SENDER and it's a draft
-      baseQuery
-        .where("message.senderId = :userId", { userId })
-        .andWhere("message.is_draft = true");
-    } else {
-      // For INBOX / TRASH / ARCHIVE: You are the RECIPIENT
-      baseQuery
-        .innerJoin("message.recipients", "recipient")
-        .where("recipient.recipient_id = :userId", { userId })
-        .andWhere("message.is_draft = false");
-
-      if (folder === "inbox") {
-        baseQuery.andWhere("recipient.deleted_at IS NULL");
-      } else if (folder === "trash") {
-        baseQuery.andWhere("recipient.deleted_at IS NOT NULL");
+      switch (folder) {
+        case "inbox":
+          return this.buildMailboxResponse(
+            this.getInboxBaseQuery(userId),
+            userId,
+            page,
+            limit,
+            "inbox",
+          );
+        case "sent":
+          return this.buildMailboxResponse(
+            this.getSentBaseQuery(userId),
+            userId,
+            page,
+            limit,
+            "sent",
+          );
+        case "drafts":
+          return this.getDrafts(userId, query);
+        case "trash":
+          return this.buildMailboxResponse(
+            this.getTrashBaseQuery(userId),
+            userId,
+            page,
+            limit,
+            "trash",
+          );
+        default:
+          throw new BadRequestException("Unknown folder");
       }
+    } catch (error) {
+      this.handleError("getFolder", error);
     }
-
-    return this.paginateThreads(baseQuery, userId, page, limit);
   }
 
-  async send(dto: SendMailDto, senderEmail: string) {
+  async send(
+    dto: SendMailDto,
+    senderEmail: string,
+  ): Promise<SendMailResponseDto> {
     try {
-      // Resolve Sender ID from Email (Database or ES)
       const sender = await this.userService.findByEmail(senderEmail);
-      if (!sender) throw new Error("Sender not found");
-      const senderId = sender.id;
+      if (!sender) {
+        throw new NotFoundException("Sender not found");
+      }
 
-      const fullMessage = await this.dataSource.transaction(async (manager) => {
+      const result = await this.dataSource.transaction(async (manager) => {
         const recipients = await this.buildRecipientInputs(dto, true);
+        if (!recipients.length) {
+          throw new BadRequestException(
+            "No valid recipients were resolved for this message",
+          );
+        }
+
         const subject = dto.subject?.trim() ?? "";
         const thread = await this.resolveThread(manager, dto.threadId, subject);
         const sentAt = new Date();
 
         let message: Message;
-
         if (dto.draftId) {
-          message = await this.findOwnedDraft(manager, dto.draftId, senderId);
+          message = await this.findOwnedDraft(manager, dto.draftId, sender.id);
           message.threadId = thread.id;
-          message.subject = thread.subject;
+          message.subject = dto.subject ?? message.subject;
           message.body = dto.body;
-          message.bodyHtml = dto.bodyHtml ?? null;
-          message.is_draft = false;
+          message.bodyHtml =
+            dto.bodyHtml ?? `<p>${dto.body.replace(/\n/g, "<br>")}</p>`;
+          message.isDraft = false;
           message.sentAt = sentAt;
-          message.sender_deleted_at = null;
+          message.senderDeletedAt = null;
         } else {
           message = manager.create(Message, {
             threadId: thread.id,
-            senderId,
-            subject: dto.subject?.trim() ?? "",
+            senderId: sender.id,
+            subject,
             body: dto.body,
-            bodyHtml: dto.bodyHtml ?? null,
-            is_draft: false,
+            bodyHtml:
+              dto.bodyHtml ?? `<p>${dto.body.replace(/\n/g, "<br>")}</p>`,
+            isDraft: false,
             sentAt,
           });
         }
 
-        const savedMessage = await manager.save(message);
-        thread.lastActivityAt = sentAt;
-        await manager.save(thread);
+        const saved = await manager.save(message);
 
-        await this.replaceRecipients(manager, savedMessage.id, recipients);
-        await this.attachFiles(
-          manager,
-          savedMessage.id,
-          senderId,
-          dto.attachmentIds,
-        );
-        if (!thread.subject && dto.subject) {
-          await this.updateThreadSubject(manager, thread, dto.subject.trim());
+        await this.replaceRecipients(manager, saved.id, recipients);
+
+        if (dto.attachmentIds?.length) {
+          await this.attachFiles(manager, saved.id, sender.id, dto.attachmentIds);
         }
 
-        console.log("SENDER:", senderId);
-        console.log("DTO:", dto);
-        console.log("THREAD ID:", thread.id);
-        console.log("RECIPIENTS:", recipients);
-        console.log("SAVED MESSAGE:", savedMessage);
+        if (subject) {
+          await this.updateThreadSubject(manager, thread, subject);
+        }
 
-        return manager.findOne(Message, {
-          where: { id: savedMessage.id },
-          relations: {
-            thread: true,
-            sender: true,
-            recipients: { recipient: true },
-            attachments: true,
-          },
-        });
+        await this.refreshThreadAfterMutation(manager, thread.id, subject);
+
+        return {
+          id: saved.id,
+          threadId: thread.id,
+          sentAt,
+        };
       });
 
-      //Index in Elasticsearch AFTER the transaction is successful
-      if (fullMessage) {
+      // async indexing (non-blocking)
+      setImmediate(async () => {
         try {
+          const fullMessage = await this.getMessageOrFail(this.dataSource.manager, result.id);
           await this.searchService.indexMessage(fullMessage);
-          this.logger.log(`Message ${fullMessage.id} indexed in ES`);
-        } catch (esError: any) {
-          // We log but don't throw, so the user still gets their success response
-          this.logger.error(
-            `Failed to index message ${fullMessage.id}: ${esError.message}`,
-          );
+        } catch (err) {
+          this.logger.warn(`Search indexing skipped for message ${result.id}`);
         }
-      }
+      });
 
-      return fullMessage;
+      const response = MailMapper.toSendMailResponse(result);
+
+      return {
+        messageId: response.messageId,
+        threadId: response.threadId,
+        sentAt: response.sentAt,
+        status: response.status,
+      };
+
     } catch (error) {
       this.handleError("send", error);
     }
@@ -440,9 +586,9 @@ export class MailService {
             (dto.body
               ? `<p>${dto.body.replace(/\n/g, "<br>")}</p>`
               : draft.bodyHtml);
-          draft.is_draft = true;
+          draft.isDraft = true;
           draft.sentAt = null;
-          draft.sender_deleted_at = null;
+          draft.senderDeletedAt = null;
         } else {
           draft = manager.create(Message, {
             threadId: thread.id,
@@ -452,14 +598,9 @@ export class MailService {
             bodyHtml:
               dto.bodyHtml ??
               (dto.body ? `<p>${dto.body.replace(/\n/g, "<br>")}</p>` : null),
-            is_draft: true,
+            isDraft: true,
             sentAt: null,
           });
-        }
-
-        if (dto.body !== undefined || dto.subject !== undefined) {
-          thread.lastActivityAt = new Date();
-          await manager.save(thread);
         }
 
         const savedDraft = await manager.save(draft);
@@ -482,6 +623,7 @@ export class MailService {
           await this.updateThreadSubject(manager, thread, subject);
         }
 
+        await this.refreshThreadMetadata(manager, thread.id, subject);
         return await this.getMessageOrFail(manager, savedDraft.id);
       });
     } catch (error) {
@@ -490,42 +632,47 @@ export class MailService {
   }
 
   async getMessageById(messageId: string, userId: string) {
-    // Use findOne with an OR condition or check SenderId explicitly
     const message = await this.messageRepo.findOne({
       where: [
-        { id: messageId, senderId: userId }, // Case 1: User is the Sender (Drafts)
-        { id: messageId, recipients: { recipient_id: userId } }, // Case 2: User is a Recipient
+        { id: messageId, senderId: userId },
+        { id: messageId, recipients: { recipientId: userId } },
       ],
       relations: {
         thread: true,
+        sender: true,
         recipients: { recipient: true },
         attachments: true,
       },
     });
 
     if (!message) {
-      // This is the error you are currently seeing
       throw new NotFoundException("Message not found in recipient mailbox");
     }
 
-    return message;
+    return {
+      data: MailMapper.toMessage(message, userId),
+    };
   }
 
   async readMessage(messageId: string, userId: string) {
     try {
-      console.log({ userId, messageId });
+      if (!userId) {
+        throw new BadRequestException("User ID is required");
+      }
 
       const message = await this.messageRepo
         .createQueryBuilder("message")
         .leftJoinAndSelect("message.sender", "sender")
+        .leftJoinAndSelect("message.attachments", "attachments")
         .leftJoinAndSelect(
           "message.recipients",
           "recipient",
-          "recipient.recipient_id = :userId AND recipient.is_deleted = false",
+          "recipient.recipientId = :userId AND recipient.isDeleted = false",
           { userId },
         )
+        .leftJoinAndSelect("recipient.recipient", "recipientUser")
         .where("message.id = :messageId", { messageId })
-        .andWhere(`(message.senderId= :userId OR recipient.id IS NOT NULL)`, {
+        .andWhere("(message.senderId = :userId OR recipient.id IS NOT NULL)", {
           userId,
         })
         .getOne();
@@ -534,26 +681,19 @@ export class MailService {
         throw new NotFoundException("Message not found");
       }
 
-      if (!userId) {
-        throw new BadRequestException("User ID is required");
-      }
-
-      // ensure user is recipient
       const isRecipient = message.recipients.some(
-        (r) => r.recipient_id === userId,
+        (recipient) => recipient.recipientId === userId,
       );
-
       const isSender = message.senderId === userId;
 
       if (!isRecipient && !isSender) {
         throw new ForbiddenException("Access denied");
       }
 
-      // mark as read
       await this.markRead(messageId, userId, true);
 
       return {
-        data: message,
+        data: MailMapper.toMessage(message, userId),
       };
     } catch (error) {
       this.handleError("readMessage", error);
@@ -562,28 +702,28 @@ export class MailService {
 
   async markRead(messageId: string, userId: string, isRead = true) {
     try {
-      // Fetch the message first to check its status
       const message = await this.messageRepo.findOne({
         where: { id: messageId },
       });
 
-      if (!message) throw new NotFoundException("Message not found");
+      if (!message) {
+        throw new NotFoundException("Message not found");
+      }
 
       if (message.senderId === userId) {
         return { success: true };
       }
-      // Return early if it's a draft to avoid the recipient check below.
-      if (message.is_draft) {
+
+      if (message.isDraft) {
         return {
           data: { messageId, isRead: false, readAt: null },
         };
       }
 
-      // Look for the recipient record (only for sent messages)
       const recipient = await this.recipientRepo.findOne({
         where: {
-          message_id: messageId,
-          recipient_id: userId,
+          messageId,
+          recipientId: userId,
         },
       });
 
@@ -591,26 +731,30 @@ export class MailService {
         throw new NotFoundException("Message not found in recipient mailbox");
       }
 
-      // Avoid unnecessary DB writes
-      if (recipient.is_read === isRead) {
+      if (recipient.isRead === isRead) {
         return {
           data: {
             messageId,
-            isRead: recipient.is_read,
-            readAt: recipient.read_at,
+            isRead: recipient.isRead,
+            readAt: recipient.readAt,
           },
         };
       }
 
-      recipient.is_read = isRead;
-      recipient.read_at = isRead ? new Date() : null;
+      recipient.isRead = isRead;
+      recipient.readAt = isRead ? new Date() : null;
       await this.recipientRepo.save(recipient);
+      await this.refreshUserThreadState(
+        this.dataSource.manager,
+        message.threadId,
+        userId,
+      );
 
       return {
         data: {
           messageId,
-          isRead: recipient.is_read,
-          readAt: recipient.read_at,
+          isRead: recipient.isRead,
+          readAt: recipient.readAt,
         },
       };
     } catch (error) {
@@ -620,18 +764,34 @@ export class MailService {
 
   async markManyAsRead(messageIds: string[], userId: string) {
     try {
-      if (!messageIds.length) return;
+      if (!messageIds.length) {
+        return {
+          data: {
+            messageIds,
+            isRead: true,
+          },
+        };
+      }
 
       await this.recipientRepo
         .createQueryBuilder()
         .update()
         .set({
-          is_read: true,
-          read_at: new Date(),
+          isRead: true,
+          readAt: new Date(),
         })
-        .where("recipient_id = :userId", { userId })
-        .andWhere("message_id IN (:...messageIds)", { messageIds })
+        .where("recipientId = :userId", { userId })
+        .andWhere("messageId IN (:...messageIds)", { messageIds })
         .execute();
+
+      const messages = await this.messageRepo.find({
+        where: { id: In(messageIds) },
+        select: ["threadId"],
+      });
+
+      for (const threadId of [...new Set(messages.map((message) => message.threadId))]) {
+        await this.refreshUserThreadState(this.dataSource.manager, threadId, userId);
+      }
 
       return {
         data: {
@@ -647,25 +807,26 @@ export class MailService {
   async markThreadAsRead(threadId: string, userId: string) {
     try {
       await this.recipientRepo
-        .createQueryBuilder("recipient")
+        .createQueryBuilder()
         .update()
         .set({
-          is_read: true,
-          read_at: new Date(),
+          isRead: true,
+          readAt: new Date(),
         })
-        .where("recipient_id = :userId", { userId })
-        // Use a subquery to filter by thread_id
+        .where("recipientId = :userId", { userId })
         .andWhere(
-          "message_id IN (" +
+          "messageId IN (" +
             this.messageRepo
               .createQueryBuilder("msg")
               .select("msg.id")
-              .where("msg.thread_id = :threadId")
+              .where("msg.threadId = :threadId")
               .getQuery() +
             ")",
           { threadId },
         )
         .execute();
+
+      await this.refreshUserThreadState(this.dataSource.manager, threadId, userId);
 
       return {
         data: {
@@ -680,32 +841,11 @@ export class MailService {
 
   async readThread(threadId: string, userId: string) {
     try {
-      await this.ensureThreadAccess(threadId, userId);
-
-      const messages = await this.messageRepo.find({
-        where: { threadId },
-        relations: {
-          sender: true,
-          recipients: {
-            recipient: true,
-          },
-          attachments: true,
-        },
-        order: {
-          createdAt: "ASC",
-        },
-      });
-
-      // mark entire thread as read
       await this.markThreadAsRead(threadId, userId);
+      const visibleMessages = await this.getVisibleThreadMessages(threadId, userId);
 
       return {
-        data: {
-          threadId,
-          messages: messages.filter((m) =>
-            this.isMessageVisibleToUser(m, userId),
-          ),
-        },
+        data: MailMapper.toThreadDetail(threadId, visibleMessages, userId),
       };
     } catch (error) {
       this.handleError("readThread", error);
@@ -716,8 +856,8 @@ export class MailService {
     try {
       const recipient = await this.recipientRepo.findOne({
         where: {
-          message_id: messageId,
-          recipient_id: userId,
+          messageId,
+          recipientId: userId,
         },
       });
 
@@ -725,13 +865,26 @@ export class MailService {
         throw new NotFoundException("Message not found in recipient mailbox");
       }
 
-      recipient.is_starred = isStarred ?? !recipient.is_starred;
+      recipient.isStarred = isStarred ?? !recipient.isStarred;
       await this.recipientRepo.save(recipient);
+
+      const message = await this.messageRepo.findOne({
+        where: { id: messageId },
+        select: ["threadId"],
+      });
+
+      if (message) {
+        await this.refreshUserThreadState(
+          this.dataSource.manager,
+          message.threadId,
+          userId,
+        );
+      }
 
       return {
         data: {
           messageId,
-          isStarred: recipient.is_starred,
+          isStarred: recipient.isStarred,
         },
       };
     } catch (error) {
@@ -755,20 +908,18 @@ export class MailService {
       let changed = false;
       const now = new Date();
 
-      // If User is the Sender
       if (message.senderId === userId) {
-        message.sender_deleted_at = now;
+        message.senderDeletedAt = now;
         await this.messageRepo.save(message);
         changed = true;
       }
 
-      // If User is a Recipient
       const recipient = message.recipients.find(
-        (item) => item.recipient_id === userId,
+        (item) => item.recipientId === userId,
       );
       if (recipient) {
-        recipient.is_deleted = true;
-        recipient.deleted_at = now;
+        recipient.isDeleted = true;
+        recipient.deletedAt = now;
         await this.recipientRepo.save(recipient);
         changed = true;
       }
@@ -776,6 +927,9 @@ export class MailService {
       if (!changed) {
         throw new ForbiddenException("No access to this message");
       }
+
+      await this.refreshThreadAfterMutation(this.dataSource.manager, message.threadId);
+      await this.refreshUserThreadState(this.dataSource.manager, message.threadId, userId);
 
       return {
         data: {
@@ -790,17 +944,15 @@ export class MailService {
 
   async getTrash(userId: string, query: MailQueryDto) {
     try {
+      const normalizedUserId = await this.resolveUserId(userId);
       const { page, limit } = this.normalizePagination(query);
-
-      const baseQuery = this.threadRepo
-        .createQueryBuilder("thread")
-        .innerJoin("thread.messages", "message")
-        .innerJoin("message.recipients", "recipient")
-        .where("recipient.recipient_id = :userId", { userId })
-        .andWhere("recipient.is_deleted = true") // Only show trashed items
-        .orderBy("recipient.deleted_at", "DESC");
-
-      return this.paginateThreads(baseQuery, userId, page, limit);
+      return this.buildMailboxResponse(
+        this.getTrashBaseQuery(normalizedUserId),
+        normalizedUserId,
+        page,
+        limit,
+        "trash",
+      );
     } catch (error) {
       this.handleError("getTrash", error);
     }
@@ -819,21 +971,19 @@ export class MailService {
 
       let changed = false;
 
-      // 1. If User is the Sender, clear their deletion timestamp
-      if (message.senderId === userId && message.sender_deleted_at !== null) {
-        message.sender_deleted_at = null;
+      if (message.senderId === userId && message.senderDeletedAt !== null) {
+        message.senderDeletedAt = null;
         await this.messageRepo.save(message);
         changed = true;
       }
 
-      // 2. If User is a Recipient, toggle is_deleted back to false
       const recipient = message.recipients.find(
-        (item) => item.recipient_id === userId,
+        (item) => item.recipientId === userId,
       );
 
-      if (recipient && recipient.is_deleted) {
-        recipient.is_deleted = false;
-        recipient.deleted_at = null; // Clear the trash timestamp
+      if (recipient && recipient.isDeleted) {
+        recipient.isDeleted = false;
+        recipient.deletedAt = null;
         await this.recipientRepo.save(recipient);
         changed = true;
       }
@@ -843,6 +993,9 @@ export class MailService {
           "Message is not in trash or you don't have access",
         );
       }
+
+      await this.refreshThreadAfterMutation(this.dataSource.manager, message.threadId);
+      await this.refreshUserThreadState(this.dataSource.manager, message.threadId, userId);
 
       return {
         data: {
@@ -857,30 +1010,33 @@ export class MailService {
 
   async permanentlyDelete(messageId: string, userId: string) {
     try {
-      // 1. Find the message and its recipients
       const message = await this.messageRepo.findOne({
         where: { id: messageId },
         relations: { recipients: true },
       });
 
-      if (!message) throw new NotFoundException("Message not found");
+      if (!message) {
+        throw new NotFoundException("Message not found");
+      }
 
-      // 2. If User is the Sender, we hard delete the message ONLY IF
-      // there are no other active recipients who haven't deleted it yet.
-      // Otherwise, we just nullify the senderId to "detach" them.
       if (message.senderId === userId) {
+        const threadId = message.threadId;
         await this.messageRepo.delete(messageId);
-        // Note: CASCADE deletes in your DB will handle recipients/attachments
-        // if configured, otherwise delete them manually first.
+        await this.refreshThreadAfterMutation(this.dataSource.manager, threadId);
         return { messageId, status: "permanently_deleted_by_sender" };
       }
 
-      // 3. If User is a Recipient, hard delete their recipient record
       const recipient = message.recipients.find(
-        (r) => r.recipient_id === userId,
+        (currentRecipient) => currentRecipient.recipientId === userId,
       );
-      if (recipient && recipient.is_deleted) {
+      if (recipient && recipient.isDeleted) {
         await this.recipientRepo.remove(recipient);
+        await this.refreshThreadAfterMutation(this.dataSource.manager, message.threadId);
+        await this.refreshUserThreadState(
+          this.dataSource.manager,
+          message.threadId,
+          userId,
+        );
         return {
           data: {
             messageId,
@@ -899,21 +1055,58 @@ export class MailService {
 
   async emptyAllTrash(userId: string) {
     try {
-      // Delete all recipient records for this user that are marked as deleted
+      const recipientRows = await this.recipientRepo.find({
+        where: {
+          recipientId: userId,
+          isDeleted: true,
+        },
+      });
+
+      const senderMessages = await this.messageRepo.find({
+        where: {
+          senderId: userId,
+        },
+        select: ["id", "threadId", "senderDeletedAt"],
+      });
+
+      const recipientMessages = recipientRows.length
+        ? await this.messageRepo.find({
+            where: {
+              id: In(recipientRows.map((row) => row.messageId)),
+            },
+            select: ["id", "threadId"],
+          })
+        : [];
+
+      const affectedThreadIds = [
+        ...new Set(
+          [
+            ...recipientMessages.map((message) => message.threadId),
+            ...senderMessages
+              .filter((message) => !!message.senderDeletedAt)
+              .map((message) => message.threadId),
+          ].filter(Boolean),
+        ),
+      ];
+
       const result = await this.recipientRepo
         .createQueryBuilder()
         .delete()
-        .where("recipient_id = :userId", { userId })
-        .andWhere("is_deleted = true")
+        .where("recipientId = :userId", { userId })
+        .andWhere("isDeleted = true")
         .execute();
 
-      // Also clear sender_deleted_at messages if this user was the sender
       await this.messageRepo
         .createQueryBuilder()
         .delete()
         .where("senderId = :userId", { userId })
-        .andWhere("sender_deleted_at IS NOT NULL")
+        .andWhere("senderDeletedAt IS NOT NULL")
         .execute();
+
+      for (const threadId of affectedThreadIds) {
+        await this.refreshUserThreadState(this.dataSource.manager, threadId, userId);
+        await this.refreshThreadAfterMutation(this.dataSource.manager, threadId);
+      }
 
       return {
         data: {
@@ -924,42 +1117,6 @@ export class MailService {
     } catch (error) {
       this.handleError("emptyAllTrash", error);
     }
-  }
-
-  private normalizePagination(query: MailQueryDto) {
-    return {
-      page: query.page ?? 1,
-      limit: query.limit ?? 20,
-    };
-  }
-
-  private async getLatestMessagesByThread(threadIds: string[], userId: string) {
-    if (!threadIds.length) return [];
-
-    // Use snake_case for the alias to prevent PostgreSQL case-sensitivity issues
-    const subQuery = this.messageRepo
-      .createQueryBuilder("m")
-      .select("MAX(m.created_at)", "max_created_at") // explicitly use database column name and simple alias
-      .addSelect("m.thread_id", "thread_id")
-      .where("m.thread_id IN (:...threadIds)", { threadIds })
-      .andWhere("m.is_draft = false")
-      .groupBy("m.thread_id");
-
-    const latestMessages = await this.messageRepo
-      .createQueryBuilder("message")
-      .innerJoin(
-        `(${subQuery.getQuery()})`,
-        "latest",
-        // Reference the snake_case alias here
-        "latest.thread_id = message.thread_id AND latest.max_created_at = message.created_at",
-      )
-      .leftJoinAndSelect("message.sender", "sender")
-      .leftJoinAndSelect("message.recipients", "recipients")
-      .leftJoinAndSelect("message.attachments", "attachments")
-      .setParameters(subQuery.getParameters())
-      .getMany();
-
-    return latestMessages.filter((m) => this.isMessageVisibleToUser(m, userId));
   }
 
   private async resolveThread(
@@ -979,15 +1136,18 @@ export class MailService {
       const normalizedSubject = subject.toLowerCase().trim();
       const existingThread = await manager.findOne(Thread, {
         where: { subject: normalizedSubject },
-        order: { lastActivityAt: "DESC" }, // Link to the most recent one
+        order: { lastActivityAt: "DESC" },
       });
 
-      if (existingThread) return existingThread;
+      if (existingThread) {
+        return existingThread;
+      }
     }
 
     const newThread = manager.create(Thread, {
       subject: subject?.toLowerCase().trim() || "No Subject",
       lastActivityAt: new Date(),
+      lastMessageAt: new Date(),
     });
 
     return manager.save(newThread);
@@ -998,7 +1158,7 @@ export class MailService {
     thread: Thread,
     subject: string,
   ) {
-    if (!thread.subject) {
+    if (!thread.subject || thread.subject === "No Subject") {
       thread.subject = subject;
       await manager.save(thread);
     }
@@ -1009,7 +1169,6 @@ export class MailService {
       Partial<Pick<SaveDraftDto, "toEmails" | "ccEmails" | "bccEmails">>,
     requireAtLeastOne: boolean,
   ): Promise<RecipientInput[]> {
-    // Map the emails to temporary objects with their types
     const rawRecipients = [
       ...(dto.toEmails ?? []).map((email) => ({
         email: email.toLowerCase().trim(),
@@ -1033,46 +1192,46 @@ export class MailService {
       return [];
     }
 
-    // Find Users by Email in the DB
-    const distinctEmails = [...new Set(rawRecipients.map((r) => r.email))];
+    const distinctEmails = [...new Set(rawRecipients.map((recipient) => recipient.email))];
     const users = await this.userRepo.find({
       where: {
-        email: In(distinctEmails), // Query by email
+        email: In(distinctEmails),
         isActive: true,
       },
-      select: ["id", "email"], // We need ID to link the recipient
+      select: ["id", "email"],
     });
 
-    // Validate that all provided emails actually exist as users
     if (users.length !== distinctEmails.length) {
       if (requireAtLeastOne) {
         throw new BadRequestException(
           "One or more recipient emails are invalid",
         );
-      } else {
-        // For drafts, just log a warning or filter out the missing ones
-        this.logger.warn(
-          "Some draft recipients not found in DB; skipping those entries.",
-        );
       }
+
+      this.logger.warn(
+        "Some draft recipients not found in DB; skipping those entries.",
+      );
     }
 
-    const emailToIdMap = new Map(users.map((u) => [u.email, u.id]));
-
-    // Return the final RecipientInput array using the IDs found
-    return rawRecipients
-      .map((r) => {
-        const recipient_id = emailToIdMap.get(r.email);
-        return recipient_id
-          ? { recipient_id, type: r.type as "to" | "cc" | "bcc" }
-          : null;
-      })
-      .filter((r): r is RecipientInput => r !== null);
+    const emailToIdMap = new Map(users.map((user) => [user.email, user.id]));
+    return this.dedupeRecipients(
+      rawRecipients
+        .map((recipient) => {
+          const recipientId = emailToIdMap.get(recipient.email);
+          return recipientId
+            ? {
+                recipientId,
+                type: recipient.type as RecipientType,
+              }
+            : null;
+        })
+        .filter((recipient): recipient is RecipientInput => recipient !== null),
+    );
   }
 
   private mapRecipients(ids: string[], type: RecipientType): RecipientInput[] {
-    return ids.map((recipient_id) => ({
-      recipient_id,
+    return ids.map((recipientId) => ({
+      recipientId,
       type,
     }));
   }
@@ -1080,11 +1239,11 @@ export class MailService {
   private dedupeRecipients(recipients: RecipientInput[]) {
     const seen = new Set<string>();
     return recipients.filter((recipient) => {
-      if (seen.has(recipient.recipient_id)) {
+      if (seen.has(recipient.recipientId)) {
         return false;
       }
 
-      seen.add(recipient.recipient_id);
+      seen.add(recipient.recipientId);
       return true;
     });
   }
@@ -1094,14 +1253,24 @@ export class MailService {
     messageId: string,
     recipients: RecipientInput[],
   ) {
-    await manager.delete(MessageRecipient, { message_id: messageId });
+    await manager.delete(MessageRecipient, { messageId });
 
-    const validRecipients = recipients.filter((r) => !!r.recipient_id);
+    const validRecipients = recipients.filter((recipient) => !!recipient.recipientId);
     if (validRecipients.length > 0) {
-      const entities = validRecipients.map((r) =>
-        manager.create(MessageRecipient, { ...r, message_id: messageId }),
+      const entities = validRecipients.map((recipient) =>
+        manager.create(MessageRecipient, { ...recipient, messageId }),
       );
-      return await manager.save(entities);
+      await manager.save(entities);
+
+      const persistedCount = await manager.count(MessageRecipient, {
+        where: { messageId },
+      });
+
+      if (persistedCount !== validRecipients.length) {
+        throw new BadRequestException(
+          "Failed to persist all message recipients",
+        );
+      }
     }
   }
 
@@ -1118,7 +1287,7 @@ export class MailService {
     const attachments = await manager.find(Attachment, {
       where: {
         id: In(attachmentIds),
-        uploader_id: senderId,
+        uploaderId: senderId,
       },
     });
 
@@ -1127,7 +1296,7 @@ export class MailService {
     }
 
     for (const attachment of attachments) {
-      attachment.message_id = messageId;
+      attachment.messageId = messageId;
     }
 
     if (attachments.length) {
@@ -1144,7 +1313,7 @@ export class MailService {
       where: {
         id: draftId,
         senderId,
-        is_draft: true,
+        isDraft: true,
       },
     });
 
@@ -1156,51 +1325,168 @@ export class MailService {
   }
 
   private includesRecipientUpdate(dto: SaveDraftDto): boolean {
-    return !!(
-      dto.toEmails?.length ||
-      dto.ccEmails?.length ||
-      dto.bccEmails?.length
+    return (
+      Object.prototype.hasOwnProperty.call(dto, "toEmails") ||
+      Object.prototype.hasOwnProperty.call(dto, "ccEmails") ||
+      Object.prototype.hasOwnProperty.call(dto, "bccEmails")
     );
   }
 
-  private async ensureThreadAccess(threadId: string, userId: string) {
-    const count = await this.messageRepo
+  private async getVisibleThreadMessages(threadId: string, userId: string) {
+    const messages = await this.messageRepo
       .createQueryBuilder("message")
-      .leftJoin("message.recipients", "recipient")
-      .where("message.thread_id = :threadId", { threadId })
-      .andWhere(
-        "(message.sender_id = :userId OR (recipient.recipient_id = :userId AND recipient.is_deleted = false))",
+      .leftJoinAndSelect("message.sender", "sender")
+      .leftJoinAndSelect("message.recipients", "recipient")
+      .leftJoinAndSelect("recipient.recipient", "recipientUser")
+      .leftJoinAndSelect("message.attachments", "attachment")
+      .leftJoin(
+        "message.recipients",
+        "accessRecipient",
+        "accessRecipient.messageId = message.id AND accessRecipient.recipientId = :userId AND accessRecipient.isDeleted = false",
         { userId },
       )
-      .getCount();
+      .where("message.threadId = :threadId", { threadId })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where(
+            "message.senderId = :userId AND message.senderDeletedAt IS NULL",
+            { userId },
+          ).orWhere("accessRecipient.id IS NOT NULL");
+        }),
+      )
+      .orderBy("message.createdAt", "ASC")
+      .getMany();
 
-    if (!count) {
+    if (!messages.length) {
       throw new ForbiddenException("You do not have access to this thread");
     }
+
+    return messages;
   }
 
   private isMessageVisibleToUser(message: Message, userId: string) {
     if (message.senderId === userId) {
-      return !message.sender_deleted_at;
+      return !message.senderDeletedAt;
     }
 
-    const recipient = message.recipients.find(
-      (item) => item.recipient_id === userId,
+    const recipient = message.recipients?.find(
+      (item) => item.recipientId === userId,
     );
-    return !!recipient && !recipient.is_deleted;
+    return !!recipient && !recipient.isDeleted;
+  }
+
+  private isMessageInTrashForUser(message: Message, userId: string) {
+    if (message.senderId === userId && !!message.senderDeletedAt) {
+      return true;
+    }
+
+    const recipient = message.recipients?.find(
+      (item) => item.recipientId === userId,
+    );
+    return !!recipient?.isDeleted;
+  }
+
+  private async refreshThreadMetadata(
+    manager: EntityManager,
+    threadId: string,
+    fallbackSubject?: string,
+  ) {
+    const thread = await manager.findOne(Thread, {
+      where: { id: threadId },
+      relations: { messages: true },
+    });
+
+    if (!thread) {
+      return;
+    }
+
+    const latestMessage = [...(thread.messages ?? [])]
+      .filter((message) => !message.isDraft)
+      .sort((left, right) => this.compareMessages(left, right))[0];
+
+    thread.lastActivityAt =
+      latestMessage?.sentAt ??
+      latestMessage?.createdAt ??
+      thread.lastActivityAt ??
+      new Date();
+    thread.lastMessageAt = latestMessage?.sentAt ?? latestMessage?.createdAt ?? null;
+    thread.snippet = latestMessage?.body?.slice(0, 140) ?? thread.snippet ?? null;
+
+    if (fallbackSubject && (!thread.subject || thread.subject === "No Subject")) {
+      thread.subject = fallbackSubject;
+    }
+
+    await manager.save(thread);
+  }
+
+  private async refreshUserThreadState(
+    manager: EntityManager,
+    threadId: string,
+    userId: string,
+  ) {
+    const aggregate = await manager
+      .createQueryBuilder(MessageRecipient, "recipient")
+      .innerJoin(Message, "message", "message.id = recipient.messageId")
+      .where("message.threadId = :threadId", { threadId })
+      .andWhere("recipient.recipientId = :userId", { userId })
+      .andWhere("message.isDraft = false")
+      .andWhere("recipient.isDeleted = false")
+      .select("COUNT(recipient.id)", "visibleCount")
+      .addSelect(
+        "COUNT(CASE WHEN recipient.isRead = false THEN 1 END)",
+        "unreadCount",
+      )
+      .addSelect(
+        "MAX(CASE WHEN recipient.isStarred = true THEN 1 ELSE 0 END)",
+        "isStarred",
+      )
+      .getRawOne<{
+        visibleCount: string;
+        unreadCount: string;
+        isStarred: string;
+      }>();
+
+    const visibleCount = Number(aggregate?.visibleCount ?? 0);
+    await manager.delete(UserThreadState, { threadId, userId });
+
+    if (!visibleCount) {
+      return;
+    }
+
+    const state = manager.create(UserThreadState, {
+      threadId,
+      userId,
+      unreadCount: Number(aggregate?.unreadCount ?? 0),
+      isStarred: Number(aggregate?.isStarred ?? 0) > 0,
+      isRead: Number(aggregate?.unreadCount ?? 0) === 0,
+    });
+
+    await manager.save(state);
+  }
+
+  private async refreshThreadAfterMutation(
+    manager: EntityManager,
+    threadId: string,
+    fallbackSubject?: string,
+  ) {
+    await this.refreshThreadMetadata(manager, threadId, fallbackSubject);
+
+    const recipients = await manager
+      .createQueryBuilder(MessageRecipient, "recipient")
+      .innerJoin(Message, "message", "message.id = recipient.messageId")
+      .where("message.threadId = :threadId", { threadId })
+      .select("DISTINCT recipient.recipientId", "userId")
+      .getRawMany<{ userId: string }>();
+
+    for (const recipient of recipients) {
+      await this.refreshUserThreadState(manager, threadId, recipient.userId);
+    }
   }
 
   private async getMessageOrFail(manager: EntityManager, messageId: string) {
     const message = await manager.findOne(Message, {
       where: { id: messageId },
-      relations: {
-        thread: true,
-        sender: true,
-        recipients: {
-          recipient: true,
-        },
-        attachments: true,
-      },
+      relations: ['recipients']
     });
 
     if (!message) {

@@ -1,4 +1,5 @@
 import {
+  ArrayUnique,
   IsString,
   IsArray,
   IsUUID,
@@ -7,6 +8,18 @@ import {
   IsEmail,
 } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { Transform } from "class-transformer";
+
+const normalizeEmailList = ({ value }: { value: unknown }) => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const values = Array.isArray(value) ? value : String(value).split(",");
+  return values
+    .map((item) => String(item).trim().toLowerCase())
+    .filter(Boolean);
+};
 
 export class SendMailDto {
   @ApiPropertyOptional({ description: "Thread ID for reply/forward" })
@@ -22,18 +35,24 @@ export class SendMailDto {
   @ApiProperty({ type: [String], example: ["user@example.com"] })
   @IsArray()
   @IsEmail({}, { each: true })
+  @ArrayUnique()
+  @Transform(normalizeEmailList)
   toEmails: string[];
 
   @ApiPropertyOptional({ type: [String] })
   @IsArray()
   @IsEmail({}, { each: true })
+  @ArrayUnique()
   @IsOptional()
+  @Transform(normalizeEmailList)
   ccEmails?: string[];
 
   @ApiPropertyOptional({ type: [String] })
   @IsArray()
   @IsEmail({}, { each: true })
+  @ArrayUnique()
   @IsOptional()
+  @Transform(normalizeEmailList)
   bccEmails?: string[];
 
   @ApiProperty()
