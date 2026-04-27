@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { BullModule } from "@nestjs/bullmq";
 import { ElasticsearchModule } from "@nestjs/elasticsearch";
+import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule } from "@nestjs/throttler";
 import KeyvRedis from "@keyv/redis";
 
@@ -88,6 +89,7 @@ function buildRedisUrl(config: ConfigService): string {
         },
       }),
     }),
+    ScheduleModule.forRoot(),
 
     /**
      * 🔍 Elasticsearch (for search: emails, users, announcements)
