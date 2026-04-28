@@ -33,6 +33,11 @@ import {
   LoginResponseDto,
   MessageResponseDto,
 } from "./dto/auth-response.dto";
+import { UserShape } from "./auth.service";
+
+type AuthenticatedRequest = Request & {
+  user: UserShape;
+};
 
 @ApiTags("auth")
 @Controller("auth")
@@ -48,6 +53,7 @@ export class AuthController {
   // - Set httpOnly refresh_token cookie
   // - Return user object
   @Public()
+  @UseGuards(AuthGuard("local"))
   @Post("login")
   @HttpCode(HttpStatus.OK)
   @ApiBody({ type: LoginDto })
@@ -58,22 +64,15 @@ export class AuthController {
   })
   @ApiResponse({ status: 401, description: "Invalid credentials" })
   async login(
-    @Body() loginDto: LoginDto,
+    @Body() _loginDto: LoginDto,
     @Res({ passthrough: true }) res: Response,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
-    // TODO: Implement
-    const user = await this.authService.validateUser(
-      loginDto.email,
-      loginDto.password,
-    );
-
-    if (!user) throw new UnauthorizedException("Invalid credentials");
-
     const result = await this.authService.login(
-      user,
+      req.user,
       req.headers["user-agent"],
       req.ip,
+      req,
     );
 
     // Set Cookies
@@ -121,14 +120,15 @@ export class AuthController {
   })
   async logout(
     @CurrentUser() user: any,
-    @Req() req: any,
+    @Body() refreshTokenDto: RefreshTokenDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    // TODO: Implement
     const accessToken = req.cookies?.access_token;
-    const refreshToken = req.body.refreshToken || req.cookies?.refresh_token;
+    const refreshToken =
+      refreshTokenDto.refreshToken || req.cookies?.refresh_token;
 
-    await this.authService.logout(user.userId, accessToken, refreshToken);
+    await this.authService.logout(user.userId, accessToken, refreshToken, req);
 
     // clear cookies
     res.clearCookie("access_token");

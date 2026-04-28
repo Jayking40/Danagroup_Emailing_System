@@ -18,10 +18,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { PaginatedResponse } from "@/types/api.types";
-import type { ComposeData, Message, Thread } from "@/types/mail.types";
+import type {
+  ComposeData,
+  DraftMessage,
+  MailFolder,
+  MailThreadSummary,
+  Message,
+  ThreadDetail,
+} from "@/types/mail.types";
 
 type ApiEnvelope<T> = T | { data: T };
 const MAIL_STALE_TIME = 30_000;
+export const supportedMailFolders: MailFolder[] = [
+  "inbox",
+  "sent",
+  "drafts",
+  "starred",
+  "trash",
+];
 
 function unwrapResponse<T>(payload: any): T {
   return payload?.data ?? payload;
@@ -31,9 +45,9 @@ function unwrapResponse<T>(payload: any): T {
  * Helper for paginated folder fetching 
  */
 async function getMailPage(
-  folder: "inbox" | "sent" | "drafts" | "trash",
+  folder: MailFolder,
   page = 1,
-): Promise<PaginatedResponse<Thread>> {
+): Promise<PaginatedResponse<MailThreadSummary | DraftMessage>> {
   const response = await api.get(`/mail/${folder}`, {
     params: { page }
   });
@@ -74,6 +88,13 @@ export function useMail() {
         staleTime: MAIL_STALE_TIME,
       }),
 
+    useStarred: (page = 1) =>
+      useQuery({
+        queryKey: ["mail", "starred", page],
+        queryFn: () => getMailPage("starred", page),
+        staleTime: MAIL_STALE_TIME,
+      }),
+
     useTrash: (page = 1) =>
       useQuery({
         queryKey: ["mail", "trash", page],
@@ -83,7 +104,7 @@ export function useMail() {
 
   // Fetches full thread and marks all messages within it as read
   useThread: (threadId?: string) =>
-    useQuery<Thread>({ // Force the type here
+    useQuery<ThreadDetail>({
     queryKey: ["mail", "thread", threadId],
     queryFn: async () => {
       if (!threadId) throw new Error("Thread ID is required");
@@ -142,34 +163,44 @@ export function useMail() {
     useMarkRead: () =>
       useMutation({
         mutationFn: async (id: string) => {
-          const res = await api.patch<ApiEnvelope<Message>>(`/mail/messages/${id}/read`);
+          const res = await api.patch<ApiEnvelope<Message>>(`/mail/messages/${id}/read`, {
+            isRead: true,
+          });
           return unwrapResponse(res.data);
         },
         onSuccess: invalidateMail,
       }),
 
-    useStarMail: (id: string) =>
+    useStarMail: () =>
       useMutation({
-        mutationFn: async () => {
-          const res = await api.patch<ApiEnvelope<Message>>(`/mail/${id}/star`);
+        mutationFn: async ({
+          id,
+          isStarred,
+        }: {
+          id: string;
+          isStarred: boolean;
+        }) => {
+          const res = await api.patch<ApiEnvelope<Message>>(`/mail/${id}/star`, {
+            isStarred,
+          });
           return unwrapResponse(res.data);
         },
         onSuccess: invalidateMail,
       }),
 
     // Trash & Deletion
-    useDeleteMail: (id: string) =>
+    useDeleteMail: () =>
       useMutation({
-        mutationFn: async () => {
+        mutationFn: async (id: string) => {
           const res = await api.delete<ApiEnvelope<Message>>(`/mail/${id}`);
           return unwrapResponse(res.data);
         },
         onSuccess: invalidateMail,
       }),
 
-    useRestoreMail: (id: string) =>
+    useRestoreMail: () =>
       useMutation({
-        mutationFn: async () => {
+        mutationFn: async (id: string) => {
           const res = await api.patch<ApiEnvelope<Message>>(`/mail/${id}/restore`);
           return unwrapResponse(res.data);
         },
@@ -185,7 +216,8 @@ export function useMail() {
     // Bulk Actions
     useBulkMarkRead: () =>
       useMutation({
-        mutationFn: (ids: string[]) => api.patch("/mail/messages/read", { ids }),
+        mutationFn: (messageIds: string[]) =>
+          api.patch("/mail/messages/read", { messageIds }),
         onSuccess: invalidateMail,
       }),
   };

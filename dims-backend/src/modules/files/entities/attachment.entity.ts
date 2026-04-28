@@ -14,7 +14,7 @@ export class Attachment {
   id: string;
 
   @Column()
-  uploader_id: string;
+  uploaderId: string;
 
   @Column({ length: 255 })
   filename: string;
@@ -23,19 +23,19 @@ export class Attachment {
   mime_type: string;
 
   @Column({ type: "bigint" })
-  size_bytes: number;
+  sizeBytes: number;
 
   @Column({ length: 500 })
-  storage_key: string;
+  storageKey: string;
 
   @CreateDateColumn({ type: "timestamptz" })
-  created_at: Date;
+  createdAt: Date;
 
   //---- RELATIONSHIPS ----
   @ManyToOne(() => Message, (msg) => msg.attachments, { onDelete: "CASCADE" })
-  @JoinColumn({ name: "message_id" })
+  @JoinColumn()
   message: Message;
 
-  @Column({ type: "uuid" })
-  message_id: string;
+  @Column({ type: "uuid", nullable: true })
+  messageId: string | null;
 }

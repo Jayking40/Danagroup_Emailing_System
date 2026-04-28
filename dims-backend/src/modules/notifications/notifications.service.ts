@@ -18,11 +18,11 @@ export class NotificationsService {
     referenceId?: string,
   ): Promise<Notification> {
     const notification = this.notificationRepo.create({
-      user_id: userId,
+      userId: userId,
       type,
       title,
       body,
-      reference_id: referenceId,
+      referenceId: referenceId,
     });
 
     return this.notificationRepo.save(notification);
@@ -32,7 +32,7 @@ export class NotificationsService {
     const notification = await this.notificationRepo.findOne({
       where: {
         id: notificationId,
-        user_id: userId,
+        userId: userId,
       },
     });
 
@@ -40,7 +40,7 @@ export class NotificationsService {
       throw new NotFoundException("Notification not found");
     }
 
-    notification.is_read = true;
+    notification.isRead = true;
     await this.notificationRepo.save(notification);
   }
 }

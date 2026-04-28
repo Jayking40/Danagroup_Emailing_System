@@ -2,6 +2,7 @@ import { forwardRef, Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { UsersController } from "./users.controller";
 import { UsersService } from "./users.service";
+import { JobsModule } from "@jobs/jobs.module";
 import { User } from "./entities/user.entity";
 import { MailModule } from "@modules/mail/mail.module";
 import { UsersSearchService } from "./users-search.service";
@@ -16,6 +17,7 @@ import { Attachment } from "@modules/files/entities/attachment.entity";
 
 @Module({
   imports: [
+    forwardRef(() => JobsModule),
     SearchModule,
     TypeOrmModule.forFeature([
       User,

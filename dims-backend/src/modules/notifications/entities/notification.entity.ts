@@ -29,19 +29,19 @@ export class Notification {
   body: string;
 
   @Column({ default: false })
-  is_read: boolean;
+  isRead: boolean;
 
   @Column({ nullable: true, type: "uuid" })
-  reference_id: string;
+  referenceId: string;
 
   @CreateDateColumn({ type: "timestamptz" })
   createdAt: Date;
 
   // ---- RELATIONSHIPS ----
   @ManyToOne(() => User, (user) => user.notifications)
-  @JoinColumn({ name: "user_id" })
+  @JoinColumn()
   user: User;
 
   @Column({ type: "uuid" })
-  user_id: string;
+  userId: string;
 }

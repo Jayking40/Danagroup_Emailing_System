@@ -32,9 +32,8 @@ export interface User {
   lastLoginAt?: string;
   createdAt: string;
   updatedAt: string;
-  accessToken: string;
-  refreshToken: string;
-  
+  accessToken?: string;
+  refreshToken?: string;
 }
 
 

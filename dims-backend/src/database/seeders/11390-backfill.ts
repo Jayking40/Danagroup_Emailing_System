@@ -15,7 +15,9 @@ async function run() {
     try {
       await queryRunner.query(`
             UPDATE threads t
-            SET last_activity_at = sub.max_date
+            SET
+                last_activity_at = sub.max_date,
+                last_message_at = sub.max_date
             FROM (
                 SELECT thread_id, MAX(COALESCE(sent_at, created_at)) as max_date
                 FROM messages

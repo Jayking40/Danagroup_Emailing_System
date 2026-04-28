@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
+import { Transform } from "class-transformer";
 import {
   ArrayUnique,
   IsArray,
@@ -7,6 +8,17 @@ import {
   IsUUID,
   IsEmail,
 } from "class-validator";
+
+const normalizeOptionalEmailList = ({ value }: { value: unknown }) => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const values = Array.isArray(value) ? value : String(value).split(",");
+  return values
+    .map((item) => String(item).trim().toLowerCase())
+    .filter(Boolean);
+};
 
 export class SaveDraftDto {
   @ApiPropertyOptional({ description: "Existing thread ID for replies" })
@@ -24,6 +36,7 @@ export class SaveDraftDto {
   @IsEmail({}, { each: true })
   @ArrayUnique()
   @IsOptional()
+  @Transform(normalizeOptionalEmailList)
   toEmails?: string[];
 
   @ApiPropertyOptional({ type: [String] })
@@ -31,6 +44,7 @@ export class SaveDraftDto {
   @IsEmail({}, { each: true })
   @ArrayUnique()
   @IsOptional()
+  @Transform(normalizeOptionalEmailList)
   ccEmails?: string[];
 
   @ApiPropertyOptional({ type: [String] })
@@ -38,6 +52,7 @@ export class SaveDraftDto {
   @IsEmail({}, { each: true })
   @ArrayUnique()
   @IsOptional()
+  @Transform(normalizeOptionalEmailList)
   bccEmails?: string[];
 
   @ApiPropertyOptional()

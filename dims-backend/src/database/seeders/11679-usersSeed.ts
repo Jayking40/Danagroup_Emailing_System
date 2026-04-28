@@ -49,33 +49,33 @@ async function seed() {
     // 2. Setup Departments (Check before creating)
     let itDept = await deptRepo.findOneBy({
       name: "IT",
-      subsidiary_id: hqSubsidiary.id,
+      subsidiaryId: hqSubsidiary.id,
     });
     if (!itDept) {
       itDept = await deptRepo.save(
-        deptRepo.create({ name: "IT", subsidiary_id: hqSubsidiary.id }),
+        deptRepo.create({ name: "IT", subsidiaryId: hqSubsidiary.id }),
       );
     }
 
     let hrDept = await deptRepo.findOneBy({
       name: "HR",
-      subsidiary_id: hqSubsidiary.id,
+      subsidiaryId: hqSubsidiary.id,
     });
     if (!hrDept) {
       hrDept = await deptRepo.save(
-        deptRepo.create({ name: "HR", subsidiary_id: hqSubsidiary.id }),
+        deptRepo.create({ name: "HR", subsidiaryId: hqSubsidiary.id }),
       );
     }
 
     let legalDept = await deptRepo.findOneBy({
       name: "Legal",
-      subsidiary_id: hqSubsidiary.id,
+      subsidiaryId: hqSubsidiary.id,
     });
     if (!legalDept) {
       legalDept = await deptRepo.save(
         deptRepo.create({
           name: "Legal",
-          subsidiary_id: hqSubsidiary.id,
+          subsidiaryId: hqSubsidiary.id,
         }),
       );
       console.log("Created department: Legal");
@@ -84,13 +84,13 @@ async function seed() {
     // 2. Setup Finance Department (Manufacturing)
     let financeDept = await deptRepo.findOneBy({
       name: "Finance",
-      subsidiary_id: manufacturingSubsidiary.id,
+      subsidiaryId: manufacturingSubsidiary.id,
     });
     if (!financeDept) {
       financeDept = await deptRepo.save(
         deptRepo.create({
           name: "Finance",
-          subsidiary_id: manufacturingSubsidiary.id,
+          subsidiaryId: manufacturingSubsidiary.id,
         }),
       );
       console.log("Created department: Finance");
@@ -99,13 +99,13 @@ async function seed() {
     // 3. Setup Operations Department (Logistics)
     let opsDept = await deptRepo.findOneBy({
       name: "Operations",
-      subsidiary_id: logisticsSubsidiary.id,
+      subsidiaryId: logisticsSubsidiary.id,
     });
     if (!opsDept) {
       opsDept = await deptRepo.save(
         deptRepo.create({
           name: "Operations",
-          subsidiary_id: logisticsSubsidiary.id,
+          subsidiaryId: logisticsSubsidiary.id,
         }),
       );
     }
@@ -131,8 +131,8 @@ async function seed() {
         lastName: "Okoro",
         role: "group_admin",
         jobTitle: "CTO",
-        subsidiary_id: hqSubsidiary.id,
-        department_id: itDept.id,
+        subsidiaryId: hqSubsidiary.id,
+        departmentId: itDept.id,
         isActive: true,
         avatarUrl: "https://pravatar.cc",
       },
@@ -142,8 +142,8 @@ async function seed() {
         lastName: "Chen",
         role: "employee",
         jobTitle: "Data Analyst",
-        subsidiary_id: hqSubsidiary.id,
-        department_id: itDept.id,
+        subsidiaryId: hqSubsidiary.id,
+        departmentId: itDept.id,
         isActive: true,
         avatarUrl: "https://pravatar.cc",
       },
@@ -153,8 +153,8 @@ async function seed() {
         lastName: "Ade",
         role: "employee",
         jobTitle: "HR Specialist",
-        subsidiary_id: hqSubsidiary.id,
-        department_id: hrDept.id,
+        subsidiaryId: hqSubsidiary.id,
+        departmentId: hrDept.id,
         isActive: true,
         avatarUrl: "https://pravatar.cc",
       },
@@ -164,8 +164,8 @@ async function seed() {
         lastName: "Rodriguez",
         role: "employee",
         jobTitle: "Accounting Manager",
-        subsidiary_id: logisticsSubsidiary.id,
-        department_id: financeDept.id,
+        subsidiaryId: logisticsSubsidiary.id,
+        departmentId: financeDept.id,
         isActive: true,
         avatarUrl: "https://pravatar.cc",
       },
@@ -175,8 +175,8 @@ async function seed() {
         lastName: "Wilson",
         role: "employee",
         jobTitle: "DevOps Engineer",
-        subsidiary_id: hqSubsidiary.id,
-        department_id: itDept.id,
+        subsidiaryId: hqSubsidiary.id,
+        departmentId: itDept.id,
         isActive: true,
         avatarUrl: "https://pravatar.cc",
       },
@@ -186,8 +186,8 @@ async function seed() {
         lastName: "Bello",
         role: "employee",
         jobTitle: "Legal Counsel",
-        subsidiary_id: hqSubsidiary.id,
-        department_id: legalDept.id,
+        subsidiaryId: hqSubsidiary.id,
+        departmentId: legalDept.id,
         isActive: true,
         avatarUrl: "https://pravatar.cc",
       },
@@ -197,8 +197,8 @@ async function seed() {
         lastName: "Smith",
         role: "employee",
         jobTitle: "Logistics Coordinator",
-        subsidiary_id: logisticsSubsidiary.id,
-        department_id: opsDept.id,
+        subsidiaryId: logisticsSubsidiary.id,
+        departmentId: opsDept.id,
         isActive: true,
         avatarUrl: "https://pravatar.cc",
       },
@@ -208,8 +208,8 @@ async function seed() {
         lastName: "Taylor",
         role: "employee",
         jobTitle: "Procurement Lead",
-        subsidiary_id: manufacturingSubsidiary.id,
-        department_id: financeDept.id,
+        subsidiaryId: manufacturingSubsidiary.id,
+        departmentId: financeDept.id,
         isActive: true,
         avatarUrl: "https://pravatar.cc",
       },
@@ -229,9 +229,9 @@ async function seed() {
       console.log(`Created user: ${u.email}`);
     }
 
-    console.log("✅ Seeding completed successfully!");
+    console.log("Seeding completed successfully!");
   } catch (error) {
-    console.error("❌ Error seeding users:", error);
+    console.error("Error seeding users:", error);
   } finally {
     await AppDataSource.destroy();
   }

@@ -8,7 +8,9 @@ import {
   Index,
 } from "typeorm";
 import { Message } from "./message.entity";
+import { UserThreadState } from "./UserThreadState.entity";
 
+@Index(['lastMessageAt'])
 @Entity("threads")
 export class Thread {
   @PrimaryGeneratedColumn("uuid")
@@ -17,28 +19,36 @@ export class Thread {
   @Column({ length: 500 })
   subject: string;
 
+  @Column({ type: 'text', nullable: true })
+  snippet: string;
+
+
   @Index() // important for inbox sorting
   @Column({
-    name: "last_activity_at",
     type: "timestamptz",
     default: () => "CURRENT_TIMESTAMP",
   })
   lastActivityAt: Date;
 
   @CreateDateColumn({
-    name: "created_at",
     type: "timestamptz",
     default: () => "CURRENT_TIMESTAMP",
   })
   createdAt: Date;
 
   @UpdateDateColumn({
-    name: "updated_at",
     type: "timestamptz",
     default: () => "CURRENT_TIMESTAMP",
   })
   updatedAt: Date;
 
+  @Column({ name: 'last_message_at', type: 'timestamp', nullable: true })
+  lastMessageAt: Date;
+
   @OneToMany(() => Message, (message) => message.thread)
   messages: Message[];
+
+  @OneToMany(() => UserThreadState, (uts) => uts.thread)
+  userStates: UserThreadState[];
 }
+

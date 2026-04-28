@@ -29,14 +29,14 @@ async function seed() {
 
     let itDept = await deptRepo.findOneBy({
       name: "IT",
-      subsidiary_id: hqSubsidiary.id,
+      subsidiaryId: hqSubsidiary.id,
     });
 
     if (!itDept) {
       itDept = await deptRepo.save(
         deptRepo.create({
           name: "IT",
-          subsidiary_id: hqSubsidiary.id,
+          subsidiaryId: hqSubsidiary.id,
         }),
       );
       console.log("Created department: IT");
@@ -49,8 +49,8 @@ async function seed() {
         lastName: "User",
         role: "group_admin",
         jobTitle: "CEO",
-        subsidiary_id: hqSubsidiary.id, // Use the ID from the DB
-        department_id: itDept.id, // Use the ID from the DB
+        subsidiaryId: hqSubsidiary.id, // Use the ID from the DB
+        departmentId: itDept.id, // Use the ID from the DB
         isActive: true,
         avatarUrl: "https://pravatar.cc",
       },
@@ -60,8 +60,8 @@ async function seed() {
         lastName: "User",
         role: "employee",
         jobTitle: "Developer",
-        subsidiary_id: hqSubsidiary.id,
-        department_id: itDept.id,
+        subsidiaryId: hqSubsidiary.id,
+        departmentId: itDept.id,
         isActive: true,
         avatarUrl: "https://pravatar.cc",
       },

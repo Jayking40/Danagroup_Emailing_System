@@ -28,10 +28,10 @@ export class AuthUserDto {
   isActive: boolean;
 
   @ApiProperty()
-  department_id: string;
+  departmentId: string;
 
   @ApiProperty()
-  subsidiary_id: string;
+  subsidiaryId: string;
 
   @ApiProperty({ required: false, nullable: true, type: String })
   lastLoginAt?: Date | null;

@@ -45,25 +45,25 @@ export class Announcement {
 
   // ---- RELATIONSHIPS ----
   @ManyToOne(() => User, (user) => user.announcements)
-  @JoinColumn({ name: "author_id" })
+  @JoinColumn()
   author: User;
 
   @Column({ type: "uuid" })
-  author_id: string;
+  authorId: string;
 
   // 2. Optional Subsidiary Target
   @ManyToOne(() => Subsidiary)
-  @JoinColumn({ name: "subsidiary_id" })
+  @JoinColumn()
   subsidiary: Subsidiary;
 
   @Column({ type: "uuid", nullable: true })
-  subsidiary_id: string;
+  subsidiaryId: string;
 
   // 3. Optional Department Target
   @ManyToOne(() => Department)
-  @JoinColumn({ name: "department_id" })
+  @JoinColumn()
   department: Department;
 
   @Column({ type: "uuid", nullable: true })
-  department_id: string;
+  departmentId: string;
 }

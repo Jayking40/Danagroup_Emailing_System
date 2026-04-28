@@ -65,10 +65,10 @@ export class User {
 
   //Expose the ID directly as a string for easier filtering/saving
   @Column()
-  department_id: string;
+  departmentId: string;
 
   @Column()
-  subsidiary_id: string;
+  subsidiaryId: string;
 
   @Column("json", { nullable: true })
   sessions?: {
@@ -79,23 +79,23 @@ export class User {
 
   // ---- RELATIONSHIPS ----
   @ManyToOne(() => Subsidiary, (subsidiary) => subsidiary.users)
-  @JoinColumn({ name: "subsidiary_id" })
+  @JoinColumn()
   subsidiary: Subsidiary;
 
   @ManyToOne(() => Department, (department) => department.users)
-  @JoinColumn({ name: "department_id" })
+  @JoinColumn()
   department: Department;
 
   // 1. Messages this user SENT
   @OneToMany(() => Message, (message) => message.sender)
-  sent_messages: Message[];
+  sentMessages: Message[];
 
   // 2. Messages this user RECEIVED (via the recipient table)
   @OneToMany(
     () => MessageRecipient,
     (messageRecipient) => messageRecipient.recipient,
   )
-  received_messages: MessageRecipient[];
+  receivedMessages: MessageRecipient[];
 
   // 3. Announcements this user AUTHORED
   @OneToMany(() => Announcement, (announcement) => announcement.author)

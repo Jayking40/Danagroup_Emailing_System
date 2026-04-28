@@ -52,6 +52,34 @@ export class AuthService {
     this.redis = new Redis(redisUrl);
   }
 
+  private async establishSession(req: Request | undefined, user: UserShape) {
+    if (!req?.session) {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate((err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+
+    if (req.logIn) {
+      await new Promise<void>((resolve, reject) => {
+        req.logIn(user as any, (err) => {
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+    }
+
+    req.session.user = {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    };
+  }
+
   // TODO: Implement validateUser(email, password): Promise<User | null>
   // - Find user by email from UsersService
   // - Compare password hash using bcrypt.compare
@@ -60,6 +88,7 @@ export class AuthService {
     const user = await this.usersService.findByEmail(email);
 
     if (!user) return null;
+    if (!user.isActive) return null;
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) return null;
@@ -98,39 +127,23 @@ export class AuthService {
 
     const tokens = await this.generateTokens(fullUser);
 
-    //hash refreshToken before storing
+    const hashedRefresh = await bcrypt.hash(tokens.refreshToken, 12);
+    const currentSessions = fullUser.sessions ?? [];
+    const nextSessions = [
+      ...currentSessions,
+      {
+        refreshToken: hashedRefresh,
+        userAgent: userAgent || "unknown",
+        ip: ip || "unknown",
+      },
+    ];
 
-    // Prepare session data
-    const sessionData = {
-      userId: fullUser.id,
-      refreshToken: tokens.refreshToken, // Or hashed if you prefer
-      userAgent: userAgent || "unknown",
-      ip: ip || "unknown",
-      lastActive: new Date().toISOString(),
-      //Store the refresh token (or its hash) to validate it later
-      hashedRefresh: await bcrypt.hash(tokens.refreshToken, 12),
-    };
+    await this.usersService.updateAuthState(fullUser.id, {
+      sessions: nextSessions,
+      lastLoginAt: new Date(),
+    });
 
-    if (req?.session) {
-      req.session.user = {
-        id: fullUser.id,
-        email: fullUser.email,
-        role: fullUser.role,
-      };
-    }
-
-    // This allows tracking of "Active Devices" and revoke them
-    // Store in Redis instead of Postgres
-    // Key format: "sess:{userId}:{refreshTokenId}"
-    // TTL matches Refresh Token expiry (e.g., 7 days)
-
-    const sessionKey = `sess:${fullUser.id}:${tokens.refreshToken.slice(-10)}`;
-    await this.redis.set(
-      sessionKey,
-      JSON.stringify(sessionData),
-      "EX",
-      60 * 60 * 24 * 7, // 7 Days
-    );
+    await this.establishSession(req, fullUser);
 
     return {
       ...tokens,
@@ -155,7 +168,7 @@ export class AuthService {
 
       const user = await this.usersService.findById(payload.sub);
 
-      if (!user || !user.sessions?.length) {
+      if (!user || !user.isActive || !user.sessions?.length) {
         throw new UnauthorizedException();
       }
 
@@ -185,7 +198,7 @@ export class AuthService {
 
       user.sessions[sessionIndex].refreshToken = hashedRefresh;
 
-      await this.usersService.update(user.id, {
+      await this.usersService.updateAuthState(user.id, {
         sessions: user.sessions,
       });
 
@@ -203,17 +216,24 @@ export class AuthService {
     refreshToken: string,
     req?: Request,
   ) {
-    //blacklist access token
-    await this.redis.set(
-      `bl: ${accessToken}`,
-      "true",
-      "EX",
-      60 * 15, // 15 mins (access token expiry)
-    );
+    if (accessToken) {
+      await this.redis.set(
+        `bl:${accessToken}`,
+        "true",
+        "EX",
+        60 * 15, // 15 mins (access token expiry)
+      );
+    }
 
-    req.logout((err) => {
-      if (err) throw err;
-    });
+    const passportLogout = req?.logout ?? req?.logOut;
+    if (passportLogout) {
+      await new Promise<void>((resolve, reject) => {
+        passportLogout.call(req, (err?: unknown) => {
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+    }
 
     // Clear express-session (Properly handle the callback)
     if (req?.session) {
@@ -228,7 +248,7 @@ export class AuthService {
     //remove refresh token from DB
     const user = await this.usersService.findById(userId);
 
-    if (user?.sessions) {
+    if (user?.sessions && refreshToken) {
       const filteredSessions = [];
       for (const session of user.sessions) {
         const match = await bcrypt.compare(refreshToken, session.refreshToken);
@@ -237,11 +257,13 @@ export class AuthService {
         }
       }
 
-      await this.usersService.update(userId, {
+      await this.usersService.updateAuthState(userId, {
         sessions: filteredSessions,
       });
 
       return { message: "Logged out successfully" };
     }
+
+    return { message: "Logged out successfully" };
   }
 }

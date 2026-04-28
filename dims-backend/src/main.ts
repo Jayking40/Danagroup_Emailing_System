@@ -1,7 +1,8 @@
 import { NestFactory } from "@nestjs/core";
 import session from "express-session";
+import passport from "passport";
 import { RedisStore } from "connect-redis";
-import Redis from "ioredis";
+import { createClient } from "redis";
 import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
@@ -30,10 +31,16 @@ async function bootstrap() {
         ? `redis://:${redisPassword}@${process.env.REDIS_HOST || "localhost"}:${process.env.REDIS_PORT || "6379"}`
         : `redis://${process.env.REDIS_HOST || "localhost"}:${process.env.REDIS_PORT || "6379"}`);
     const isTls = resolvedRedisUrl.startsWith("rediss://");
-    const redisClient = new Redis(
-      resolvedRedisUrl,
-      isTls ? { tls: { rejectUnauthorized: false } } : {},
-    );
+    const redisClient = createClient({
+      url: resolvedRedisUrl,
+      socket: isTls ? { tls: true, rejectUnauthorized: false } : undefined,
+    });
+
+    redisClient.on("error", (error) => {
+      console.error("Redis session client error:", error);
+    });
+
+    await redisClient.connect();
 
     app.use(
       session({
@@ -52,6 +59,8 @@ async function bootstrap() {
     );
 
     app.use(cookieParser());
+    app.use(passport.initialize());
+    app.use(passport.session());
 
     app.setGlobalPrefix("api");
 
@@ -67,7 +76,7 @@ async function bootstrap() {
     );
 
     app.enableCors({
-      origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
+      origin: process.env.FRONTEND_URL ?? "http://localhost:3000", 
       credentials: true,
     });
 
