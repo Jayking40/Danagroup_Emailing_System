@@ -30,14 +30,14 @@ services:
       - /app/node_modules
     environment:
       - NODE_ENV=development
-      - PORT=3000
+      - PORT=8000
     ports:
-      - "3001:3000"
+      - "8000:8000"
       - "9229:9229"  # Node.js debugger
 
   postgres:
     ports:
-      - "5433:5432"  # Expose for local DB tools without colliding with local Postgres
+      - "5432:5432"  # Expose for local DB tools without colliding with local Postgres
 
   redis:
     ports:

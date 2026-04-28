@@ -27,5 +27,5 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 
 USER nestjs
-EXPOSE 3001
+EXPOSE 8000
 CMD ["node", "dist/main.js"]
