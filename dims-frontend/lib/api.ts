@@ -14,7 +14,7 @@ function resolveApiUrl() {
 
   if (typeof window !== "undefined") {
     const { protocol, hostname } = window.location;
-    const localBackendBase = `${protocol}//${hostname}:3001`;
+    const localBackendBase = `${protocol}//${hostname}:8000`;
 
     if (configuredUrl?.startsWith("/")) {
       return `${localBackendBase}${configuredUrl}`;
@@ -25,7 +25,7 @@ function resolveApiUrl() {
     }
   }
 
-  return configuredUrl || "http://localhost:3001/api";
+  return configuredUrl || "http://localhost:8000/api";
 }
 
 function resolveSocketUrl() {
@@ -40,7 +40,7 @@ function resolveSocketUrl() {
     const host = window.location.hostname;
 
     if (host === "localhost" || host === "127.0.0.1") {
-      return `${protocol}//${host}:3001`;
+      return `${protocol}//${host}:8000`;
     }
   }
 

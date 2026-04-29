@@ -139,8 +139,15 @@ npm run migration:revert
 # Seed the database tables fist before the users table
 npm run seed:table
 
+
 #seed the users table
 npm run seed:test-user
+#docker
+docker exec -it dims_api npm run migration:run
+docker exec -it dims_api npm run seed:test-user
+
+# seed full user
+docker exec -it dims_api npx ts-node -r tsconfig-paths/register src/database/seeders/users.seed.ts
 
 ```
 ---
