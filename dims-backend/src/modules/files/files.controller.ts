@@ -61,14 +61,23 @@ export class FilesController {
   @Post("avatar")
   @UseInterceptors(FileInterceptor("file"))
   @ApiConsumes("multipart/form-data")
-  @ApiOperation({ summary: "Upload avatar image for the current user (max 5MB, jpeg/png/gif/webp)" })
-  @ApiResponse({ status: 201, description: "Avatar uploaded and profile updated" })
+  @ApiOperation({
+    summary:
+      "Upload avatar image for the current user (max 5MB, jpeg/png/gif/webp)",
+  })
+  @ApiResponse({
+    status: 201,
+    description: "Avatar uploaded and profile updated",
+  })
   @ApiResponse({ status: 400, description: "Invalid file type or size" })
   async uploadAvatar(
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: { userId: string; role: string },
   ) {
-    const { storageKey } = await this.filesService.uploadAvatar(file, user.userId);
+    const { storageKey } = await this.filesService.uploadAvatar(
+      file,
+      user.userId,
+    );
     await this.usersService.update(
       user.userId,
       { avatarUrl: storageKey },

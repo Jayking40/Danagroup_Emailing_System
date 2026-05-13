@@ -141,7 +141,11 @@ export class FilesService {
 
     await this.ensureBucket();
 
-    const ext = file.originalname.split(".").pop()?.replace(/[^a-z0-9]/gi, "") || "jpg";
+    const ext =
+      file.originalname
+        .split(".")
+        .pop()
+        ?.replace(/[^a-z0-9]/gi, "") || "jpg";
     const storageKey = `avatars/${uploaderId}/${uuid()}.${ext}`;
 
     await this.minioClient.putObject(

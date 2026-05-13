@@ -1704,7 +1704,10 @@ export class MailService {
     }
 
     const MAX_TOTAL_SIZE = 20 * 1024 * 1024;
-    const totalSize = attachments.reduce((sum, a) => sum + Number(a.sizeBytes), 0);
+    const totalSize = attachments.reduce(
+      (sum, a) => sum + Number(a.sizeBytes),
+      0,
+    );
     if (totalSize > MAX_TOTAL_SIZE) {
       throw new BadRequestException("Total attachment size exceeds 20MB limit");
     }

@@ -77,9 +77,7 @@ export class DepartmentsService {
 
     const activeUsers = department.users?.filter((u) => u.isActive) ?? [];
     if (activeUsers.length > 0) {
-      throw new ConflictException(
-        "Cannot delete department with active users",
-      );
+      throw new ConflictException("Cannot delete department with active users");
     }
 
     await this.deptRepo.remove(department);

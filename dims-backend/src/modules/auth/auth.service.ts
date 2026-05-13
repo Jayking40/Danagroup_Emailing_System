@@ -137,7 +137,8 @@ export class AuthService {
         ip: ip || "unknown",
       },
     ];
-    const nextSessions = allSessions.length > 5 ? allSessions.slice(-5) : allSessions;
+    const nextSessions =
+      allSessions.length > 5 ? allSessions.slice(-5) : allSessions;
 
     await this.usersService.updateAuthState(fullUser.id, {
       sessions: nextSessions,

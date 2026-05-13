@@ -72,7 +72,9 @@ export class DepartmentsController {
   // ── Department routes ──
 
   @Get()
-  @ApiOperation({ summary: "List all departments (optionally filter by subsidiaryId)" })
+  @ApiOperation({
+    summary: "List all departments (optionally filter by subsidiaryId)",
+  })
   @ApiResponse({ status: 200, description: "Departments returned" })
   async findAll(@Query("subsidiaryId") subsidiaryId?: string) {
     return this.departmentsService.findAllDepartments(subsidiaryId);
@@ -88,7 +90,9 @@ export class DepartmentsController {
 
   @Post()
   @Roles("subsidiary_admin", "group_admin")
-  @ApiOperation({ summary: "Create department (subsidiary_admin/group_admin only)" })
+  @ApiOperation({
+    summary: "Create department (subsidiary_admin/group_admin only)",
+  })
   @ApiResponse({ status: 201, description: "Department created" })
   @ApiResponse({ status: 403, description: "Forbidden" })
   @ApiResponse({ status: 404, description: "Subsidiary not found" })
@@ -99,7 +103,9 @@ export class DepartmentsController {
 
   @Patch(":id")
   @Roles("subsidiary_admin", "group_admin")
-  @ApiOperation({ summary: "Update department (subsidiary_admin/group_admin only)" })
+  @ApiOperation({
+    summary: "Update department (subsidiary_admin/group_admin only)",
+  })
   @ApiResponse({ status: 200, description: "Department updated" })
   @ApiResponse({ status: 403, description: "Forbidden" })
   @ApiResponse({ status: 404, description: "Department not found" })

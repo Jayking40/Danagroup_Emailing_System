@@ -89,7 +89,12 @@ export class UsersController {
     @CurrentUser() currentUser: { userId: string; role: string },
   ) {
     // TODO: Implement
-    return this.usersService.update(id, body, currentUser.userId, currentUser.role);
+    return this.usersService.update(
+      id,
+      body,
+      currentUser.userId,
+      currentUser.role,
+    );
   }
 
   // TODO: Implement DELETE /users/:id — deactivate user (admin only)

@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class AddMessageRecipientIndexes1747182060000
-  implements MigrationInterface
-{
+export class AddMessageRecipientIndexes1747182060000 implements MigrationInterface {
   name = "AddMessageRecipientIndexes1747182060000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -18,9 +16,7 @@ export class AddMessageRecipientIndexes1747182060000
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_mr_message_id"`,
-    );
+    await queryRunner.query(`DROP INDEX "public"."IDX_mr_message_id"`);
     await queryRunner.query(
       `DROP INDEX "public"."IDX_mr_recipient_id_is_read"`,
     );

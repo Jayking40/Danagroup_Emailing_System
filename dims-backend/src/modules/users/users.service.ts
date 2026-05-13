@@ -43,7 +43,10 @@ export class UsersService {
 
   private handleError(method: string, error: any) {
     // Do not mask NestJS known exceptions (BadRequestException, etc.)
-    this.logger.error(`UsersService.${method} failed: ${error.message}`, error.stack);
+    this.logger.error(
+      `UsersService.${method} failed: ${error.message}`,
+      error.stack,
+    );
     throw error;
   }
 
@@ -169,7 +172,9 @@ export class UsersService {
 
     const emailDomain = dto.email.split("@")[1];
     if (subsidiary.domain && emailDomain !== subsidiary.domain) {
-      throw new BadRequestException(`Email must use domain: ${subsidiary.domain}`);
+      throw new BadRequestException(
+        `Email must use domain: ${subsidiary.domain}`,
+      );
     }
 
     try {
@@ -202,7 +207,12 @@ export class UsersService {
     }
   }
   // TODO: Implement update(id, dto): User (admin or self)
-  async update(id: string, dto: UpdateUserDto, requesterId: string, requesterRole: string) {
+  async update(
+    id: string,
+    dto: UpdateUserDto,
+    requesterId: string,
+    requesterRole: string,
+  ) {
     if (
       requesterId !== id &&
       requesterRole !== "group_admin" &&
@@ -238,7 +248,9 @@ export class UsersService {
 
       await this.jobsService.enqueueUserIndex({ userId: updatedUser.id });
 
-      this.logger.log(`User ${user.firstName} ${user.lastName} deactivated successfully`);
+      this.logger.log(
+        `User ${user.firstName} ${user.lastName} deactivated successfully`,
+      );
     } catch (error) {
       this.handleError("deactivate", error);
     }

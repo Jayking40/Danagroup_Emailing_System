@@ -16,7 +16,9 @@ export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get()
-  @ApiOperation({ summary: "List notifications for the current user (paginated)" })
+  @ApiOperation({
+    summary: "List notifications for the current user (paginated)",
+  })
   @ApiResponse({ status: 200, description: "Notifications returned" })
   async findAll(
     @CurrentUser() user: { userId: string },
@@ -26,7 +28,9 @@ export class NotificationsController {
   }
 
   @Get("unread-count")
-  @ApiOperation({ summary: "Get unread notification count for the current user" })
+  @ApiOperation({
+    summary: "Get unread notification count for the current user",
+  })
   @ApiResponse({ status: 200, description: "Unread count returned" })
   async getUnreadCount(@CurrentUser() user: { userId: string }) {
     return this.notificationsService.getUnreadCount(user.userId);
@@ -44,7 +48,9 @@ export class NotificationsController {
   }
 
   @Patch("read-all")
-  @ApiOperation({ summary: "Mark all notifications as read for the current user" })
+  @ApiOperation({
+    summary: "Mark all notifications as read for the current user",
+  })
   @ApiResponse({ status: 200, description: "All notifications marked as read" })
   async markAllRead(@CurrentUser() user: { userId: string }) {
     return this.notificationsService.markAllRead(user.userId);
