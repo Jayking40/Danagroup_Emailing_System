@@ -3,8 +3,8 @@
     "types": ["node", "multer"],
     "esModuleInterop": true,                // Required for modern imports
     "allowSyntheticDefaultImports": true,   // Required for express-session
-    "moduleResolution": "node",   
-    "module": "commonjs",
+    "moduleResolution": "node16",   
+    "module": "node16",
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,

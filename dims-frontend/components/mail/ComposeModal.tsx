@@ -66,7 +66,7 @@ const emailListField = (required = false) =>
       }
     });
 
-const composeSchema = z.object({
+const sendSchema = z.object({
   to: emailListField(true),
   cc: emailListField(),
   bcc: emailListField(),
@@ -74,7 +74,7 @@ const composeSchema = z.object({
   body: z.string().min(1, "Required"),
 });
 
-type ComposeFormInput = z.input<typeof composeSchema>;
+type ComposeFormInput = z.input<typeof sendSchema>;
 type ComposeFormValues = ComposeFormInput;
 
 const buildBodyHtml = (body: string) => `<p>${body.replace(/\n/g, '<br>')}</p>`;
@@ -102,6 +102,7 @@ export default function ComposeModal() {
   const [uploadedAttachments, setUploadedAttachments] = useState<UploadedAttachment[]>([]);
   const [isClosing, setIsClosing] = useState(false);
   const isSendingRef = useRef(false);
+  const isClosingRef = useRef(false);
   const lastSavedSignatureRef = useRef("");
   const currentDraftIdRef = useRef<string | null>(null);
   const initializedComposeKeyRef = useRef<string | null>(null);
@@ -112,7 +113,7 @@ export default function ComposeModal() {
   const { mutateAsync: saveDraft } = useSaveDraft();
 
   const { getValues, register, handleSubmit, reset, watch, formState: { errors } } = useForm<ComposeFormInput>({
-    resolver: zodResolver(composeSchema),
+    resolver: zodResolver(sendSchema),
     defaultValues: { to: '', cc: '', bcc: '', subject: '', body: '' }
   });
 
@@ -290,10 +291,11 @@ export default function ComposeModal() {
 
   // Function to handle saving before closing
   const handleCloseAndSaveDraft = async () => {
-    if (isClosing) {
+    if (isClosingRef.current) {
       return;
     }
 
+    isClosingRef.current = true;
     setIsClosing(true);
     const values = getValues();
 
@@ -302,6 +304,7 @@ export default function ComposeModal() {
         await saveDraftIfNeeded(values, true);
       } catch (err) {
         toast.error("Could not save draft");
+        isClosingRef.current = false;
         setIsClosing(false);
         return;
       }
@@ -310,6 +313,8 @@ export default function ComposeModal() {
     reset();
     setUploadedAttachments([]);
     lastSavedSignatureRef.current = "";
+    currentDraftIdRef.current = null;
+    isClosingRef.current = false;
     setIsClosing(false);
     closeCompose();
   };

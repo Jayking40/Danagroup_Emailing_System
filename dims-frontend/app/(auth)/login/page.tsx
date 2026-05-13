@@ -27,13 +27,7 @@ import Logo from "../login/logo.png";
 // ------------------- Form Validation -------------------
 const loginSchema = z.object({
   email: z.string().email().toLowerCase().trim(),
-  password: z
-    .string()
-    .min(8, "Password must be at least 8 characters")
-    .max(100)
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(/[0-9]/, "Password must contain at least one number"),
+  password: z.string().min(1, "Password is required").max(100),
   rememberMe: z.boolean().optional(),
 });
 
@@ -124,7 +118,12 @@ export default function LoginPage() {
       {/* Login Form */}
       <div className="shadow-xl h-screen w-full flex justify-center items-center relative">
         <div className="shadow-md h-[85%] w-[70%] z-20 bg-white flex flex-col px-16 justify-center rounded">
-          <form autoComplete="on" onSubmit={handleSubmit(onSubmit)}>
+          <form
+            autoComplete="on"
+            method="post"
+            noValidate
+            onSubmit={handleSubmit(onSubmit)}
+          >
             <div className="flex flex-col gap-10">
               <div className="flex flex-col gap-2">
                 <h3 className="font-medium tracking-wider">
