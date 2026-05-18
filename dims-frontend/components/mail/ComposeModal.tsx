@@ -66,7 +66,7 @@ const emailListField = (required = false) =>
       }
     });
 
-const composeSchema = z.object({
+const sendSchema = z.object({
   to: emailListField(true),
   cc: emailListField(),
   bcc: emailListField(),
@@ -74,19 +74,29 @@ const composeSchema = z.object({
   body: z.string().min(1, "Required"),
 });
 
-type ComposeFormInput = z.input<typeof composeSchema>;
+type ComposeFormInput = z.input<typeof sendSchema>;
 type ComposeFormValues = ComposeFormInput;
 
-const buildBodyHtml = (body: string) => `<p>${body.replace(/\n/g, '<br>')}</p>`;
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const buildBodyHtml = (body: string) => `<p>${escapeHtml(body).replace(/\n/g, '<br>')}</p>`;
 
 const getRecipientAddress = (recipient: Message["recipients"][number]) =>
   recipient.email || recipient.recipient?.email || "";
 
 const mapComposeValuesToPayload = (
   values: ComposeFormValues,
+  threadId?: string,
   draftId?: string | null,
 ): ComposeData => ({
   draftId: draftId || undefined,
+  threadId: threadId || undefined,
   toEmails: parseEmailList(values.to),
   ccEmails: parseEmailList(values.cc),
   bccEmails: parseEmailList(values.bcc),
@@ -96,12 +106,13 @@ const mapComposeValuesToPayload = (
 });
 
 export default function ComposeModal() {
-  const { isComposeOpen, closeCompose, composeDraftId, setComposeDraftId } =
+  const { isComposeOpen, closeCompose, composeDraftId, composeDefaults, setComposeDraftId } =
     useMailStore();
   const { useSaveDraft, useSendMail, useGetMessage } = useMail();
   const [uploadedAttachments, setUploadedAttachments] = useState<UploadedAttachment[]>([]);
   const [isClosing, setIsClosing] = useState(false);
   const isSendingRef = useRef(false);
+  const isClosingRef = useRef(false);
   const lastSavedSignatureRef = useRef("");
   const currentDraftIdRef = useRef<string | null>(null);
   const initializedComposeKeyRef = useRef<string | null>(null);
@@ -112,7 +123,7 @@ export default function ComposeModal() {
   const { mutateAsync: saveDraft } = useSaveDraft();
 
   const { getValues, register, handleSubmit, reset, watch, formState: { errors } } = useForm<ComposeFormInput>({
-    resolver: zodResolver(composeSchema),
+    resolver: zodResolver(sendSchema),
     defaultValues: { to: '', cc: '', bcc: '', subject: '', body: '' }
   });
 
@@ -126,6 +137,7 @@ export default function ComposeModal() {
   const buildDraftPayload = useCallback(
     (values: Partial<ComposeFormValues>): ComposeData => ({
       draftId: currentDraftIdRef.current || composeDraftId || undefined,
+      threadId: composeDefaults?.threadId,
       toEmails: parseEmailList(values.to),
       ccEmails: parseEmailList(values.cc),
       bccEmails: parseEmailList(values.bcc),
@@ -134,7 +146,7 @@ export default function ComposeModal() {
       bodyHtml: buildBodyHtml(values.body || ""),
       attachmentIds,
     }),
-    [attachmentIds, composeDraftId],
+    [attachmentIds, composeDefaults?.threadId, composeDraftId],
   );
 
   const hasDraftContent = useCallback(
@@ -224,7 +236,7 @@ export default function ComposeModal() {
       return;
     }
 
-    const composeKey = composeDraftId || "new";
+    const composeKey = composeDraftId || JSON.stringify(composeDefaults || "new");
     if (initializedComposeKeyRef.current === composeKey) {
       return;
     }
@@ -276,13 +288,19 @@ export default function ComposeModal() {
     
     // If we are opening a FRESH compose modal
     if (!composeDraftId) {
-      reset({ to: '', cc: '', bcc: '', subject: '', body: '' });
+      reset({
+        to: composeDefaults?.to || '',
+        cc: composeDefaults?.cc || '',
+        bcc: composeDefaults?.bcc || '',
+        subject: composeDefaults?.subject || '',
+        body: composeDefaults?.body || '',
+      });
       setUploadedAttachments([]);
       lastSavedSignatureRef.current = "";
       isSendingRef.current = false;
     }
     
-  }, [buildDraftPayload, draftData, isComposeOpen, composeDraftId, reset]);
+  }, [buildDraftPayload, composeDefaults, draftData, isComposeOpen, composeDraftId, reset]);
 
 
 
@@ -290,10 +308,11 @@ export default function ComposeModal() {
 
   // Function to handle saving before closing
   const handleCloseAndSaveDraft = async () => {
-    if (isClosing) {
+    if (isClosingRef.current) {
       return;
     }
 
+    isClosingRef.current = true;
     setIsClosing(true);
     const values = getValues();
 
@@ -302,6 +321,7 @@ export default function ComposeModal() {
         await saveDraftIfNeeded(values, true);
       } catch (err) {
         toast.error("Could not save draft");
+        isClosingRef.current = false;
         setIsClosing(false);
         return;
       }
@@ -310,6 +330,8 @@ export default function ComposeModal() {
     reset();
     setUploadedAttachments([]);
     lastSavedSignatureRef.current = "";
+    currentDraftIdRef.current = null;
+    isClosingRef.current = false;
     setIsClosing(false);
     closeCompose();
   };
@@ -319,7 +341,11 @@ export default function ComposeModal() {
   const onSubmit = (data: ComposeFormValues) => {
     isSendingRef.current = true;
     const payload = {
-      ...mapComposeValuesToPayload(data, currentDraftIdRef.current || composeDraftId),
+      ...mapComposeValuesToPayload(
+        data,
+        composeDefaults?.threadId,
+        currentDraftIdRef.current || composeDraftId,
+      ),
       attachmentIds: uploadedAttachments.map((attachment) => attachment.id),
     };
 
@@ -361,7 +387,13 @@ export default function ComposeModal() {
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-1 fixed top-[10%] flex-col z-[100] bg-white max-h-[80vh] min-w-[60vw] rounded-lg">
 
           <div className="flex justify-between items-center p-2 bg-dana-red-100/30 rounded-t-lg h-[12vh] lg:h-[14vh] border-b-dana-blue-500/60 border-b-4">
-            <span className="text-sm font-bold px-2">New Message</span>
+            <span className="text-sm font-bold px-2">
+              {composeDefaults?.mode === "reply"
+                ? "Reply"
+                : composeDefaults?.mode === "forward"
+                  ? "Forward"
+                  : "New Message"}
+            </span>
             <button 
               type="button" 
               onClick={handleCloseAndSaveDraft} 
