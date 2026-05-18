@@ -43,8 +43,30 @@ export type MailboxChangedPayload = {
   timestamp?: string;
 };
 
+function isOriginAllowed(origin: string, patterns: string[]): boolean {
+  return patterns.some((p) =>
+    p.startsWith("*.") ? origin.endsWith(p.slice(1)) : origin === p,
+  );
+}
+
 @WebSocketGateway({
-  cors: { origin: "*" },
+  cors: {
+    origin: (
+      requestOrigin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      const allowed = (process.env.FRONTEND_URL ?? "http://localhost:3000")
+        .split(",")
+        .map((o) => o.trim())
+        .filter(Boolean);
+      if (!requestOrigin || isOriginAllowed(requestOrigin, allowed)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
+    credentials: true,
+  },
   namespace: "/notifications",
   pingInterval: 25000,
   pingTimeout: 20000,
@@ -159,7 +181,7 @@ export class MailGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   emitUserStatus(userId: string, status: string) {
-    this.server.emit("user_status", {
+    this.emitEventToUser(userId, "user_status", {
       userId,
       status,
       timestamp: new Date().toISOString(),
@@ -197,12 +219,12 @@ export class MailGateway implements OnGatewayConnection, OnGatewayDisconnect {
       secret: this.configService.get<string>("JWT_SECRET"),
     });
 
-    if (!payload?.userId) {
+    if (!payload?.sub) {
       throw new WsException("Invalid authentication token");
     }
 
     return {
-      userId: payload.userId,
+      userId: payload.sub,
       email: payload.email,
       role: payload.role,
     };
