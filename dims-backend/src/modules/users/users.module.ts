@@ -9,11 +9,11 @@ import { UsersSearchService } from "./users-search.service";
 import { SearchModule } from "@modules/search/search.module";
 import { Department } from "@modules/departments/entities/department.entity";
 import { Subsidiary } from "@modules/departments/entities/subsidiary.entity";
-import { MailService } from "@modules/mail/mail.service";
 import { Message } from "@modules/mail/entities/message.entity";
 import { Thread } from "@modules/mail/entities/thread.entity";
 import { MessageRecipient } from "@modules/mail/entities/message-recipient.entity";
 import { Attachment } from "@modules/files/entities/attachment.entity";
+import { CloudinaryService } from "@modules/cloudinary/cloudinary.service";
 
 @Module({
   imports: [
@@ -31,7 +31,7 @@ import { Attachment } from "@modules/files/entities/attachment.entity";
     forwardRef(() => MailModule),
   ],
   controllers: [UsersController],
-  providers: [UsersService, UsersSearchService],
+  providers: [UsersService, UsersSearchService, CloudinaryService],
   exports: [UsersService],
 })
 export class UsersModule {}

@@ -90,7 +90,7 @@ export class UsersController {
     try {
       const result = await this.cloudinaryService.uploadFile(file);
       return {
-        imageUrl: result.secure_url,
+        avatarUrl: result.secure_url,
         publicId: result.public_id,
       };
     } catch (error) {
