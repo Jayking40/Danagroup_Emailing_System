@@ -51,6 +51,9 @@ export class User {
   @Column({ length: 255, nullable: true })
   avatarUrl?: string;
 
+  @Column({ nullable: true })
+  avatarPublicId?: string; // For Cloudinary management
+
   @Column({ default: true })
   isActive: boolean;
 

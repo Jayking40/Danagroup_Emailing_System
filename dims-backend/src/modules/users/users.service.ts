@@ -235,6 +235,27 @@ export class UsersService {
       this.handleError("update", error);
     }
   }
+
+  async updateProfilePic(
+    userId: string,
+    data: { avatarUrl: string; avatarPublicId: string },
+  ) {
+    try {
+      const user = await this.findById(userId);
+      if (!user) throw new NotFoundException("User not found");
+
+      user.avatarUrl = data.avatarUrl;
+      user.avatarPublicId = data.avatarPublicId;
+
+      const updatedUser = await this.userRepo.save(user);
+      await this.jobsService.enqueueUserIndex({ userId: updatedUser.id });
+
+      return updatedUser;
+    } catch (error) {
+      this.handleError("updateProfilePic", error);
+    }
+  }
+
   // TODO: Implement deactivate(id): void (admin only, sets is_active = false)
   async deactivate(id: string): Promise<void> {
     try {

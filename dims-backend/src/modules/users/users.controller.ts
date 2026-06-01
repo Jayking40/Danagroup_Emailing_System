@@ -10,6 +10,11 @@ import {
   UseGuards,
   ParseUUIDPipe,
   Logger,
+  UseInterceptors,
+  BadRequestException,
+  UploadedFile,
+  InternalServerErrorException,
+  Put,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
 import { UsersService } from "./users.service";
@@ -21,6 +26,8 @@ import { UpdateUserDto } from "./dto/update-user.dto";
 import { QueryUserDto } from "./dto/query-user.dto";
 import { SearchService } from "@modules/search/search.service";
 import { CurrentUser } from "@common/decorators/current-user.decorator";
+import { CloudinaryService } from "@modules/cloudinary/cloudinary.service";
+import { FileInterceptor } from "@nestjs/platform-express/multer/interceptors/file.interceptor";
 
 @ApiTags("users")
 @ApiBearerAuth()
@@ -32,6 +39,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly searchService: SearchService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   // TODO: Implement GET /users — list all active users (paginated)
@@ -69,6 +77,66 @@ export class UsersController {
   async findOne(@Param("id", ParseUUIDPipe) id: string) {
     // TODO: Implement
     return this.usersService.findById(id);
+  }
+
+  @Post("upload-profile-image")
+  @ApiOperation({ summary: "Upload profile image to Cloudinary" })
+  @UseInterceptors(FileInterceptor("file"))
+  async uploadProfileImage(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException("File is required");
+    }
+
+    try {
+      const result = await this.cloudinaryService.uploadFile(file);
+      return {
+        imageUrl: result.secure_url,
+        publicId: result.public_id,
+      };
+    } catch (error) {
+      this.logger.error("Cloudinary upload failed", error);
+      throw new InternalServerErrorException("Failed to upload image");
+    }
+  }
+
+  @Put("change-dp") // Use PUT or PATCH for updates
+  @UseInterceptors(FileInterceptor("file"))
+  async changeDisplayPicture(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() currentUser: { userId: string; role: string },
+  ) {
+    if (!file) {
+      throw new BadRequestException("New profile image file is required");
+    }
+
+    const userId = currentUser.userId; // Get the authenticated user's ID
+
+    // Fetch current user from DB to check for an existing DP
+    const user = await this.usersService.findById(userId);
+
+    // If they have an old image, delete it from Cloudinary
+    if (user?.avatarPublicId) {
+      try {
+        await this.cloudinaryService.deleteFile(user.avatarPublicId);
+      } catch (err) {
+        // Log error but don't block the upload process if deletion fails
+        console.error("Failed to delete old image from Cloudinary:", err);
+      }
+    }
+
+    // Upload the new profile picture
+    const uploadResult = await this.cloudinaryService.uploadFile(file);
+
+    // Save BOTH the secure URL and the public_id to your database
+    await this.usersService.updateProfilePic(userId, {
+      avatarUrl: uploadResult.secure_url,
+      avatarPublicId: uploadResult.public_id, // Store this for future updates/deletions
+    });
+
+    return {
+      message: "Profile picture updated successfully",
+      avatarUrl: uploadResult.secure_url,
+    };
   }
 
   // TODO: Implement POST /users — create new user (admin only)
