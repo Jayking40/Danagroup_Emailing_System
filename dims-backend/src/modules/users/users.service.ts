@@ -241,7 +241,8 @@ export class UsersService {
     data: { avatarUrl: string; avatarPublicId: string },
   ) {
     try {
-      const user = await this.findById(userId);
+      const user = await this.userRepo.findOne({ where: { id: userId } });
+
       if (!user) throw new NotFoundException("User not found");
 
       user.avatarUrl = data.avatarUrl;
@@ -250,7 +251,12 @@ export class UsersService {
       const updatedUser = await this.userRepo.save(user);
       await this.jobsService.enqueueUserIndex({ userId: updatedUser.id });
 
-      return updatedUser;
+      return {
+        data: {
+          avatarUrl: updatedUser.avatarUrl,
+          avatarPublicId: updatedUser.avatarPublicId,
+        },
+      };
     } catch (error) {
       this.handleError("updateProfilePic", error);
     }

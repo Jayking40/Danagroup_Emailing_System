@@ -79,26 +79,6 @@ export class UsersController {
     return this.usersService.findById(id);
   }
 
-  @Post("upload-profile-image")
-  @ApiOperation({ summary: "Upload profile image to Cloudinary" })
-  @UseInterceptors(FileInterceptor("file"))
-  async uploadProfileImage(@UploadedFile() file: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException("File is required");
-    }
-
-    try {
-      const result = await this.cloudinaryService.uploadFile(file);
-      return {
-        avatarUrl: result.secure_url,
-        publicId: result.public_id,
-      };
-    } catch (error) {
-      this.logger.error("Cloudinary upload failed", error);
-      throw new InternalServerErrorException("Failed to upload image");
-    }
-  }
-
   @Put("change-dp") // Use PUT or PATCH for updates
   @UseInterceptors(FileInterceptor("file"))
   async changeDisplayPicture(
