@@ -26,6 +26,7 @@ import { RolesGuard } from "@common/guards/roles.guards";
 import { JwtAuthGuard } from "@common/guards/jwt-auth.guard";
 import { MailModule } from "@modules/mail/mail.module";
 import { CacheModule } from "@nestjs/cache-manager";
+import { CloudinaryModule } from "@modules/cloudinary/cloudinary.module";
 
 function buildRedisUrl(config: ConfigService): string {
   const url = config.get<string>("REDIS_URL");
@@ -131,6 +132,7 @@ function buildRedisUrl(config: ConfigService): string {
     SearchModule,
     JobsModule,
     HealthModule,
+    CloudinaryModule,
   ],
 
   providers: [
