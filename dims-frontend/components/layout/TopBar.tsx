@@ -1,13 +1,12 @@
 "use client";
 
-import { Camera, LogOut, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { LogOut, Search } from "lucide-react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
 import { useAuthStore } from "@/store/authStore";
 import NotificationPanel from "@/components/layout/NotificationPanel";
 import Image from "next/image";
-import profileImage from "@/assets/profile-image.webp"
 import { ProfileAvatarSetting } from "../ui/Avatar";
 
 const routeLabels: Array<{ match: RegExp; title: string; subtitle: string }> = [
@@ -32,7 +31,25 @@ export default function TopBar() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
 
-   const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleOutsideClick(event: MouseEvent) {
+      if (
+        modalRef.current &&
+        !modalRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, []);
 
   const routeMeta = useMemo(
     () =>
@@ -61,13 +78,13 @@ export default function TopBar() {
         <div className="flex items-center gap-3">
           <NotificationPanel userId={user?.id} />
 
-          <div className="hidden relative items-center gap-3 rounded-full border bg-slate-200 p-1 md:flex">
+          <div className="hidden relative items-center gap-3 rounded-full border bg-slate-200 md:flex">
             <div className="group">
               <div
                 onClick={() => {setIsOpen(!isOpen)}} 
-              className="flex cursor-pointer text-xs font-semibold text-white items-center justify-center rounded-full h-7 w-7">
+              className="flex cursor-pointer text-xs font-semibold text-white items-center justify-center rounded-full h-9 w-9">
                 { user?.avatarUrl
-                  ?  <div className="relative h-7 w-7 rounded-full overflow-hidden">
+                  ?  <div className="relative h-9 min-w-9 rounded-full overflow-hidden">
                       <Image alt={`${user.firstName}'s profile`} src={user.avatarUrl} sizes="18px" fill priority className=" object-cover"/>
                     </div>
                   : <div className="h-7 w-7 flex justify-center items-center rounded-full bg-dana-blue-600"> { getInitials(user?.firstName, user?.lastName) } </div>
@@ -82,7 +99,11 @@ export default function TopBar() {
 
             </div>
 
-            <div className={` ${isOpen ? "opacity-100" : "opacity-0"} absolute shadow-md rounded-md bg-slate-50 top-16 right-0 w-96 py-8 px-4 flex flex-col gap-3`}>
+            <div
+              ref={modalRef} 
+              onClick={(e) => e.stopPropagation()}
+              className={` ${isOpen ? "opacity-100" : "opacity-0"} absolute shadow-md rounded-md bg-slate-50 top-16 right-0 w-96 py-8 px-4 flex flex-col gap-3`}
+              >
 
               <div className="flex flex-col justify-center items-center">
 

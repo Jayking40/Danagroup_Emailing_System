@@ -27,7 +27,7 @@ export function ProfileAvatarSetting({ initialUser }: { initialUser: User }) {
       setErrorMessage('');
 
       const result = await changeDP(selectedFile);
-      
+
       console.log('Upload result:', result);
       
       // Adapt key based on your store's precise API response structure
