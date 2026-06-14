@@ -24,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={rubik.variable}>
+    <html lang="en" className={rubik.variable} suppressHydrationWarning>
       <body className="font-rubik antialiased">
         <Providers>
           {children}
