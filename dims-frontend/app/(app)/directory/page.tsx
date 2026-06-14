@@ -67,8 +67,7 @@ export default function DirectoryPage() {
   }, [filters]);
 
   const handleExportCSV = () => {
-    // TODO: Implement CSV export for admins
-    console.log('[v0] CSV export not yet implemented');
+    // CSV export functionality would go here
   };
 
   return (
